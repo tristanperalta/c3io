@@ -356,6 +356,7 @@ fn void close(Handle* handle, CloseCb cb) @extern("uv_close");
 fn int is_active(Handle* handle) @extern("uv_is_active");
 
 <*
+<<<<<<< HEAD
  Check if a handle is closing or closed.
 
  @param handle : "Handle to check"
@@ -382,6 +383,8 @@ alias WalkCb = fn void(Handle* handle, void* arg);
 fn void walk(Loop* loop, WalkCb walk_cb, void* arg) @extern("uv_walk");
 
 <*
+=======
+>>>>>>> c095da2 (Initial commit)
  Set user data associated with a handle.
 
  @param handle : "Handle to set data on"

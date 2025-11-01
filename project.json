@@ -14,9 +14,9 @@
       "type": "static-lib",
       "linked-libraries": ["uv"]
     },
-    "main": {
+    "timer-example": {
       "type": "executable",
-      "sources": ["main.c3"],
+      "sources": ["examples/timer_example.c3"],
       "linked-libraries": ["uv"]
     }
   },

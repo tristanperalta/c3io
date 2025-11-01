@@ -204,7 +204,7 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::UdpSend);
+    ctx.req = uv::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Parse destination address
@@ -270,7 +270,7 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::UdpSend);
+    ctx.req = uv::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Prepare buffer (copy data so it stays valid until send completes)

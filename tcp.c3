@@ -150,7 +150,7 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
     }
 
     // Allocate connect request and context (freed in callback)
-    uv::Connect* req = uv::alloc_req(uv::Connect);
+    uv::Connect* req = uv::alloc_req(uv::Connect, uv::ReqType.CONNECT);
     ConnectContext* ctx = mem::new(ConnectContext);
     ctx.conn = conn;
     ctx.cb = callback;
@@ -323,7 +323,7 @@ fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
                              void* user_data = null) @public
 {
     // Allocate write request and context (freed in callback)
-    uv::Write* req = uv::alloc_req(uv::Write);
+    uv::Write* req = uv::alloc_req(uv::Write, uv::ReqType.WRITE);
     WriteContext* ctx = mem::new(WriteContext);
     ctx.conn = self;
     ctx.cb = callback;

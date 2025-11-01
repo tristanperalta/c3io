@@ -90,7 +90,7 @@ fn void DnsResolver.resolve(&self, String hostname, String service,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::GetAddrInfo);
+    ctx.req = uv::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
     uv::req_set(ctx.req, ctx);
 
     // Prepare hints for UDP socket
@@ -134,7 +134,7 @@ fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::GetAddrInfo);
+    ctx.req = uv::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
     uv::req_set(ctx.req, ctx);
 
     // Prepare hints for TCP socket

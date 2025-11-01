@@ -263,7 +263,8 @@ fn void after_work_in_event_loop(uv::Work* req, int status)
 fn int EventLoop.queue_work(&self, WorkContext* ctx) @public
 {
     // Allocate uv_work_t handle
-    ctx.work_req = mem::new_array(char, 512);  // Enough for uv_work_t
+    usz work_size = uv::req_size(uv::ReqType.WORK);
+    ctx.work_req = mem::new_array(char, work_size);
     uv::req_set_data((uv::Req*)ctx.work_req, ctx);
 
     // Queue work

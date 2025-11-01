@@ -44,7 +44,7 @@ alias Work = void;        // uv_work_t (thread pool work request)
 // Filesystem request (uv_fs_t) - needs actual storage
 struct Fs
 {
-	char[512] _opaque;  // Opaque storage for uv_fs_t (enough for all platforms)
+	char[512] _opaque;  // Opaque storage for uv_fs_t (actual size: 440 bytes on Linux x64)
 }
 
 // Directory entry (uv_dirent_t)
@@ -99,6 +99,22 @@ enum DirEntryType : const
 	SOCKET = 5,
 	CHAR = 6,
 	BLOCK = 7,
+}
+
+enum ReqType : const
+{
+	UNKNOWN_REQ = 0,
+	REQ,
+	CONNECT,
+	WRITE,
+	SHUTDOWN,
+	UDP_SEND,
+	FS,
+	WORK,
+	GETADDRINFO,
+	GETNAMEINFO,
+	RANDOM,
+	REQ_TYPE_MAX,
 }
 
 // ============================================================================
@@ -308,6 +324,14 @@ fn int loop_alive(Loop* loop) @extern("uv_loop_alive");
  @return "Size in bytes"
 *>
 fn usz loop_size() @extern("uv_loop_size");
+
+<*
+ Get the size of a request structure.
+
+ @param type : "Request type"
+ @return "Size in bytes"
+*>
+fn usz req_size(ReqType type) @extern("uv_req_size");
 
 // ============================================================================
 // Handle Functions
@@ -696,15 +720,16 @@ macro @uv_check(result, message, fault_type)
 
 <*
  Allocate memory for a request type.
- Allocates 512 bytes which is enough for any libuv request.
+ Queries libuv for the actual size needed.
 
- @param $ReqType : "Request type to allocate"
+ @param $ReqType : "Request type to allocate (for casting)"
+ @param req_type : "ReqType enum value"
  @return "Pointer to allocated request"
 *>
-macro alloc_req($ReqType)
+macro alloc_req($ReqType, req_type)
 {
-    // 512 bytes should be enough for any libuv request type
-    return ($ReqType*)mem::new_array(char, 512);
+    usz size = req_size(req_type);
+    return ($ReqType*)mem::new_array(char, size);
 }
 
 // ============================================================================

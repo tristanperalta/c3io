@@ -6,7 +6,7 @@
   ],
   "version": "0.1.0",
   "warnings": ["no-unused"],
-  "sources": ["src/**"],
+  "sources": ["dns.c3", "event_loop.c3", "file.c3", "tcp.c3", "timer.c3", "udp.c3", "uv.c3i", "work.c3"],
   "test-sources": ["test/**"],
   "output": ".",
   "targets": {
@@ -16,7 +16,7 @@
     },
     "main": {
       "type": "executable",
-      "sources": ["main.c3", "src/**"],
+      "sources": ["main.c3"],
       "linked-libraries": ["uv"]
     }
   },

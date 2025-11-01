@@ -1,0 +1,24 @@
+{
+  "langrev": "1",
+  "authors": [
+    "Tristan Peralta <tristan@peralta.ph>",
+    "Claude Code <noreply@anthropic.com>"
+  ],
+  "version": "0.1.0",
+  "warnings": ["no-unused"],
+  "sources": ["src/**"],
+  "test-sources": ["test/**"],
+  "output": ".",
+  "targets": {
+    "c3io": {
+      "type": "static-lib",
+      "linked-libraries": ["uv"]
+    },
+    "main": {
+      "type": "executable",
+      "sources": ["main.c3", "src/**"],
+      "linked-libraries": ["uv"]
+    }
+  },
+  "link-libc": true
+}

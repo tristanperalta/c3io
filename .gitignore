@@ -1,0 +1,18 @@
+# C3 build artifacts
+build/
+headers/
+*.o
+*.a
+*.so
+*.exe
+testrun
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

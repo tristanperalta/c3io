@@ -105,17 +105,35 @@ fn bool EventLoop.is_alive(&self) @public
 }
 
 <*
+ Generic close callback that frees the handle.
+ This is used by close_walk_cb for handles that don't have wrapper structs.
+*>
+fn void generic_close_cb(uv::Handle* handle)
+{
+    free(handle);
+}
+
+<*
  Walk callback for closing all handles.
  Used internally by close_all_handles().
+
+ IMPORTANT: This closes handles that were never explicitly closed.
+ For handles that have wrapper structs (Timer*, TcpConnection*, etc.),
+ those wrappers should have called .close() which registers proper cleanup callbacks.
+ This function catches any handles that were NOT closed and closes them generically.
 *>
 fn void close_walk_cb(uv::Handle* handle, void* arg)
 {
     // Only close handles that are not already closing
     // uv_is_closing returns non-zero if handle is closing or closed
     // We must explicitly check == 0 (not use ! operator on int)
-    if (uv::is_closing(handle) == 0)
+    int is_closing = uv::is_closing(handle);
+    if (is_closing == 0)
     {
-        uv::close(handle, null);
+        // Close with generic callback that just frees the handle
+        // Note: If this handle has a wrapper struct, it will leak!
+        // Wrappers should have called .close() before close_all_handles()
+        uv::close(handle, &generic_close_cb);
     }
 }
 

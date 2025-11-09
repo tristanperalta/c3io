@@ -107,8 +107,12 @@ fn void on_send_internal(uv::UdpSend* req, int status)
         ctx.cb(ctx.socket, status, ctx.user_data);
     }
 
-    // Clean up
-    free(ctx.bufs);
+    // Clean up (including copied data buffer)
+    if (ctx.bufs != null)
+    {
+        free(ctx.bufs.base);  // Free the copied data
+        free(ctx.bufs);
+    }
     free(ctx.req);
     free(ctx);
 }
@@ -220,9 +224,11 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
         return;
     }
 
-    // Prepare buffer
+    // Prepare buffer (copy data so it stays valid until send completes)
     ctx.bufs = mem::new(uv::Buf);
-    ctx.bufs.base = data.ptr;
+    char* data_copy = mem::new_array(char, data.len);
+    mem::copy(data_copy, data.ptr, data.len);
+    ctx.bufs.base = data_copy;
     ctx.bufs.len = data.len;
 
     result = uv::udp_send(ctx.req, self.handle, ctx.bufs, 1,
@@ -236,7 +242,11 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
         {
             callback(self, result, user_data);
         }
-        free(ctx.bufs);
+        if (ctx.bufs != null)
+        {
+            free(ctx.bufs.base);  // Free the copied data
+            free(ctx.bufs);
+        }
         free(ctx.req);
         free(ctx);
     }
@@ -263,9 +273,11 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
     ctx.req = uv::alloc_req(uv::UdpSend);
     uv::req_set(ctx.req, ctx);
 
-    // Prepare buffer
+    // Prepare buffer (copy data so it stays valid until send completes)
     ctx.bufs = mem::new(uv::Buf);
-    ctx.bufs.base = data.ptr;
+    char* data_copy = mem::new_array(char, data.len);
+    mem::copy(data_copy, data.ptr, data.len);
+    ctx.bufs.base = data_copy;
     ctx.bufs.len = data.len;
 
     int result = uv::udp_send(ctx.req, self.handle, ctx.bufs, 1,
@@ -279,7 +291,11 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
         {
             callback(self, result, user_data);
         }
-        free(ctx.bufs);
+        if (ctx.bufs != null)
+        {
+            free(ctx.bufs.base);  // Free the copied data
+            free(ctx.bufs);
+        }
         free(ctx.req);
         free(ctx);
     }

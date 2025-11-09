@@ -105,6 +105,39 @@ fn bool EventLoop.is_alive(&self) @public
 }
 
 <*
+ Walk callback for closing all handles.
+ Used internally by close_all_handles().
+*>
+fn void close_walk_cb(uv::Handle* handle, void* arg)
+{
+    // Only close handles that are not already closing
+    // uv_is_closing returns non-zero if handle is closing or closed
+    // We must explicitly check == 0 (not use ! operator on int)
+    if (uv::is_closing(handle) == 0)
+    {
+        uv::close(handle, null);
+    }
+}
+
+<*
+ Close all handles in the event loop using uv_walk.
+ This is the proper shutdown pattern for libuv:
+ 1. Walk all handles and close unclosed ones
+ 2. Run event loop to process all close callbacks
+
+ Call this before close() to ensure clean shutdown.
+*>
+fn void EventLoop.close_all_handles(&self) @public
+{
+    // Walk through all handles and close them
+    uv::walk(self.loop, &close_walk_cb, null);
+
+    // Run event loop to process all close callbacks
+    // UV_RUN_DEFAULT runs until all handles are closed
+    uv::run(self.loop, uv::RunMode.DEFAULT);
+}
+
+<*
  Close and free the event loop.
  All handles must be closed before calling this.
 *>

@@ -337,6 +337,32 @@ fn void close(Handle* handle, CloseCb cb) @extern("uv_close");
 fn int is_active(Handle* handle) @extern("uv_is_active");
 
 <*
+ Check if a handle is closing or closed.
+
+ @param handle : "Handle to check"
+ @return "Non-zero if handle is closing/closed, 0 otherwise"
+*>
+fn int is_closing(Handle* handle) @extern("uv_is_closing");
+
+<*
+ Walk callback type - called for each handle in the loop.
+
+ @param handle : "Handle being visited"
+ @param arg : "User data passed to uv_walk"
+*>
+alias WalkCb = fn void(Handle* handle, void* arg);
+
+<*
+ Walk the list of handles in the event loop.
+ Calls the callback for each handle.
+
+ @param loop : "Event loop"
+ @param walk_cb : "Callback to call for each handle"
+ @param arg : "User data to pass to callback"
+*>
+fn void walk(Loop* loop, WalkCb walk_cb, void* arg) @extern("uv_walk");
+
+<*
  Set user data associated with a handle.
 
  @param handle : "Handle to set data on"

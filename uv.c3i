@@ -47,6 +47,13 @@ struct Fs
 	char[512] _opaque;  // Opaque storage for uv_fs_t (enough for all platforms)
 }
 
+// Directory entry (uv_dirent_t)
+struct Dirent
+{
+	char* name;
+	DirEntryType type;
+}
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -80,6 +87,18 @@ enum HandleType : const
 	SIGNAL,
 	FILE,
 	HANDLE_TYPE_MAX,
+}
+
+enum DirEntryType : const
+{
+	UNKNOWN = 0,
+	FILE = 1,
+	DIR = 2,
+	LINK = 3,
+	FIFO = 4,
+	SOCKET = 5,
+	CHAR = 6,
+	BLOCK = 7,
 }
 
 // ============================================================================
@@ -810,6 +829,27 @@ fn FileStat* fs_req_statbuf(Fs* req) @extern("uv_fs_get_statbuf");
  @param req : "Filesystem request to clean up"
 *>
 fn void fs_req_cleanup(Fs* req) @extern("uv_fs_req_cleanup");
+
+<*
+ Scan a directory asynchronously.
+
+ @param loop : "Event loop"
+ @param req : "Filesystem request"
+ @param path : "Directory path"
+ @param flags : "Reserved, must be 0"
+ @param cb : "Completion callback"
+ @return "0 on success, negative error code on failure"
+*>
+fn int fs_scandir(Loop* loop, Fs* req, char* path, int flags, FsCb cb) @extern("uv_fs_scandir");
+
+<*
+ Get the next entry from a scandir operation.
+
+ @param req : "Filesystem request (after scandir completion)"
+ @param ent : "Output directory entry"
+ @return "UV_EOF when no more entries, 0 on success, negative error code on failure"
+*>
+fn int fs_scandir_next(Fs* req, Dirent* ent) @extern("uv_fs_scandir_next");
 
 // ============================================================================
 // UDP Functions

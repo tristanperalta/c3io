@@ -333,6 +333,31 @@ fn usz loop_size() @extern("uv_loop_size");
 *>
 fn usz req_size(ReqType type) @extern("uv_req_size");
 
+<*
+ Update the event loop's concept of "now".
+ Should be called at the start of each event loop iteration.
+
+ @param loop : "Event loop"
+*>
+fn void update_time(Loop* loop) @extern("uv_update_time");
+
+<*
+ Get the current timestamp in milliseconds.
+ The timestamp is cached; it increases once per event loop iteration.
+
+ @param loop : "Event loop"
+ @return "Current time in milliseconds"
+*>
+fn ulong now(Loop* loop) @extern("uv_now");
+
+<*
+ Get high-resolution time in nanoseconds.
+ Not affected by time adjustments; suitable for measuring intervals.
+
+ @return "Time in nanoseconds"
+*>
+fn ulong hrtime() @extern("uv_hrtime");
+
 // ============================================================================
 // Handle Functions
 // ============================================================================
@@ -447,6 +472,30 @@ fn void handle_set_data(Handle* handle, void* data) @extern("uv_handle_set_data"
 *>
 fn void* handle_get_data(Handle* handle) @extern("uv_handle_get_data");
 
+<*
+ Reference a handle.
+ References prevent the event loop from exiting while the handle is active.
+
+ @param handle : "Handle to reference"
+*>
+fn void ref(Handle* handle) @extern("uv_ref");
+
+<*
+ Unreference a handle.
+ Unreferenced handles don't prevent the event loop from exiting.
+
+ @param handle : "Handle to unreference"
+*>
+fn void unref(Handle* handle) @extern("uv_unref");
+
+<*
+ Check if a handle is referenced.
+
+ @param handle : "Handle to check"
+ @return "Non-zero if referenced, 0 otherwise"
+*>
+fn int has_ref(Handle* handle) @extern("uv_has_ref");
+
 // ============================================================================
 // Request Functions
 // ============================================================================
@@ -542,6 +591,26 @@ fn int tcp_nodelay(Tcp* tcp, int enable) @extern("uv_tcp_nodelay");
  @return "0 on success, negative error code on failure"
 *>
 fn int tcp_keepalive(Tcp* tcp, int enable, uint delay) @extern("uv_tcp_keepalive");
+
+<*
+ Get the local address to which the TCP handle is bound.
+
+ @param tcp : "TCP handle"
+ @param name : "Output sockaddr structure"
+ @param namelen : "Input: buffer size, Output: actual size"
+ @return "0 on success, negative error code on failure"
+*>
+fn int tcp_getsockname(Tcp* tcp, Sockaddr* name, int* namelen) @extern("uv_tcp_getsockname");
+
+<*
+ Get the remote peer address of the TCP connection.
+
+ @param tcp : "TCP handle"
+ @param name : "Output sockaddr structure"
+ @param namelen : "Input: buffer size, Output: actual size"
+ @return "0 on success, negative error code on failure"
+*>
+fn int tcp_getpeername(Tcp* tcp, Sockaddr* name, int* namelen) @extern("uv_tcp_getpeername");
 
 <*
  Listen for incoming connections.
@@ -932,6 +1001,28 @@ fn int udp_recv_start(Udp* udp, AllocCb alloc_cb, UdpRecvCb recv_cb) @extern("uv
  @return "0 on success, negative error code on failure"
 *>
 fn int udp_recv_stop(Udp* udp) @extern("uv_udp_recv_stop");
+
+<*
+ Get the local address to which the UDP handle is bound.
+
+ @param udp : "UDP handle"
+ @param name : "Output sockaddr structure"
+ @param namelen : "Input: buffer size, Output: actual size"
+ @return "0 on success, negative error code on failure"
+*>
+fn int udp_getsockname(Udp* udp, Sockaddr* name, int* namelen) @extern("uv_udp_getsockname");
+
+<*
+ Try to send data over UDP without queuing.
+ Returns immediately; if send would block, returns UV_EAGAIN.
+
+ @param udp : "UDP handle"
+ @param bufs : "Array of buffers to send"
+ @param nbufs : "Number of buffers"
+ @param addr : "Destination address"
+ @return "Number of bytes sent on success, negative error code on failure"
+*>
+fn int udp_try_send(Udp* udp, Buf* bufs, uint nbufs, Sockaddr* addr) @extern("uv_udp_try_send");
 
 // UDP flags
 const uint UV_UDP_REUSEADDR = 4;  // Allow reusing addresses

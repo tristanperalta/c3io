@@ -20,7 +20,7 @@ c3io is a standalone library that provides high-level async I/O primitives built
 
 ### Low-Level Bindings
 
-- **libuv Bindings** (`uv`) - Complete C3 bindings for libuv API
+- **libuv Bindings** (`uv`) - C3 bindings for libuv API
 
 ## Dependencies
 

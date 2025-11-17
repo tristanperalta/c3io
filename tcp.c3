@@ -49,10 +49,13 @@ struct TcpConnection
     AllocCallback alloc_cb;
     ReadCallback read_cb;
     void* read_user_data;
+    AcceptCallback accept_cb;
+    void* accept_user_data;
 }
 
 // Callback types for user code (defined before structs that use them)
 alias ConnectCallback = fn void(TcpConnection* conn, int status, void* user_data);
+alias AcceptCallback = fn void(TcpConnection* server, TcpConnection* client, void* user_data);
 alias ReadCallback = fn void(TcpConnection* conn, char[] data, void* user_data);
 alias WriteCallback = fn void(TcpConnection* conn, int status, void* user_data);
 alias AllocCallback = fn char[](TcpConnection* conn, usz suggested_size, void* user_data);
@@ -415,4 +418,93 @@ fn void? TcpConnection.set_keepalive(&self, bool enable, uint delay = 60) @publi
 {
     int result = uv::tcp_keepalive(self.handle, enable ? 1 : 0, delay);
     uv::@uv_check(result, "Failed to set TCP keepalive", TCP_INIT_FAILED)!;
+}
+
+// ============================================================================
+// Server Functions
+// ============================================================================
+
+<*
+ Internal callback for new connections.
+ Accepts the connection and calls user callback.
+*>
+fn void on_connection_internal(uv::Stream* server, int status)
+{
+    TcpConnection* server_conn = uv::handle_get_data((uv::Handle*)server);
+
+    if (status < 0)
+    {
+        io::eprintfn("Connection error: %s", (ZString)uv::strerror(status));
+        return;
+    }
+
+    // Create a new client connection
+    TcpConnection*? client_opt = create(server_conn.loop);
+    if (catch err = client_opt)
+    {
+        io::eprintfn("Failed to create client connection");
+        return;
+    }
+    TcpConnection* client = client_opt;
+
+    // Accept the connection
+    int result = uv::accept(server, (uv::Stream*)client.handle);
+    if (result != 0)
+    {
+        io::eprintfn("Failed to accept connection: %s", (ZString)uv::strerror(result));
+        client.close();
+        return;
+    }
+
+    // Call user callback
+    if (server_conn.accept_cb)
+    {
+        server_conn.accept_cb(server_conn, client, server_conn.accept_user_data);
+    }
+}
+
+<*
+ Bind the TCP server to an address and port.
+
+ @param ip: "IP address to bind to (e.g., '0.0.0.0' for all interfaces)"
+ @param port: "Port number to bind to"
+*>
+fn void? TcpConnection.bind(&self, String ip, ushort port) @public
+{
+    uv::Sockaddr_in addr;
+    ZString c_ip = (ZString)ip.ptr;
+
+    int result = uv::ip4_addr(c_ip, port, &addr);
+    if (result != 0)
+    {
+        io::printfn("Failed to parse bind address %s:%d: %s", ip, port, (ZString)uv::strerror(result));
+        return TCP_ADDR_PARSE_FAILED?;
+    }
+
+    result = uv::tcp_bind(self.handle, (uv::Sockaddr*)&addr, 0);
+    if (result != 0)
+    {
+        io::printfn("Failed to bind to %s:%d: %s", ip, port, (ZString)uv::strerror(result));
+        return TCP_INIT_FAILED?;
+    }
+}
+
+<*
+ Start listening for incoming connections.
+
+ @param backlog: "Maximum length of the queue of pending connections"
+ @param callback: "Called when a new connection arrives"
+ @param user_data: "User context passed to callback"
+*>
+fn void? TcpConnection.listen(&self, int backlog, AcceptCallback callback, void* user_data = null) @public
+{
+    self.accept_cb = callback;
+    self.accept_user_data = user_data;
+
+    int result = uv::listen((uv::Stream*)self.handle, backlog, &on_connection_internal);
+    if (result != 0)
+    {
+        io::printfn("Failed to listen: %s", (ZString)uv::strerror(result));
+        return TCP_INIT_FAILED?;
+    }
 }

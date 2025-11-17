@@ -10,12 +10,25 @@ import async::event_loop;
  Provides async TCP connection and I/O operations using libuv.
 
  Usage:
-   TcpConnection? conn = async_tcp::connect(loop, "127.0.0.1", 8080, &on_connect);
-   defer conn.close();
+  fn void on_connect(async::tcp::TcpConnection* conn, int status, void* user_data)
+  {
+    if (status != 0)
+    {
+      io::eprintfn("Connection failed");
+      conn.close();
+      return;
+    }
+    io::printfn("Connected successfully!");
+    // Do work with the connection...
+    conn.start_read(&on_alloc, &on_read);
+    conn.write(data, &on_write);
 
-   // In on_connect callback:
-   conn.start_read(&on_alloc, &on_read);
-   conn.write(data, &on_write);
+    // When done, close the connection
+    conn.close();
+  }
+  // initialize the loop
+  TcpConnection*? conn = async::tcp::connect(loop, "127.0.0.1", 8080, &on_connect)!!;
+  loop.run()!!;
 *>
 
 // Faults

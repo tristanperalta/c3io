@@ -12,7 +12,7 @@ import async::event_loop;
  UDP is connectionless, so you can send/receive without "connecting".
 
  Usage:
-   UdpSocket* socket = async_udp::create(loop);
+   UdpSocket* socket = async::udp::create(loop);
    socket.bind("0.0.0.0", 6881);  // Optional - can send without binding
    socket.recv_start(&on_alloc, &on_recv, user_data);
    socket.send(addr, data, &on_send, user_data);

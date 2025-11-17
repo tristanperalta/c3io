@@ -12,7 +12,7 @@ import async::event_loop;
  Timers can be one-shot or repeating.
 
  Usage:
-   Timer* timer = async_timer::create(loop);
+   Timer* timer = async::timer::create(loop);
    timer.start(1000, 0, &on_timeout, user_data);  // Fire once after 1 second
    // Later:
    timer.stop();

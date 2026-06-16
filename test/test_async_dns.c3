@@ -50,7 +50,6 @@ fn void test_resolve_localhost() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -121,7 +120,6 @@ fn void test_resolve_tcp() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -194,7 +192,6 @@ fn void test_addr_to_string() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -244,7 +241,6 @@ fn void test_resolve_invalid_hostname() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -313,7 +309,6 @@ fn void test_multiple_addresses() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();

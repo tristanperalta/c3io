@@ -25,7 +25,7 @@ c3io is a standalone library that provides high-level async I/O primitives built
 ## Dependencies
 
 - **libuv** - Cross-platform async I/O library
-- **C3 compiler** - Version 0.6.x or later
+- **C3 compiler** - Version 0.8.x or later
 
 ### Installing libuv
 
@@ -63,7 +63,7 @@ This will create `c3io.a` in the build directory.
 c3c test
 ```
 
-The test suite includes 30 tests covering all async modules.
+The test suite covers all async modules.
 
 ## Usage
 

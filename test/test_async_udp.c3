@@ -29,7 +29,6 @@ fn void test_create_close_socket() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -39,7 +38,6 @@ fn void test_create_close_socket() @test
     if (catch err = socket_opt)
     {
         assert(false, "Should create UDP socket");
-        return;
     }
     async::udp::UdpSocket* socket = socket_opt;
 
@@ -63,7 +61,6 @@ fn void test_bind_socket() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -72,7 +69,6 @@ fn void test_bind_socket() @test
     if (catch err = socket_opt)
     {
         assert(false, "Should create UDP socket");
-        return;
     }
     async::udp::UdpSocket* socket = socket_opt;
 
@@ -132,7 +128,7 @@ fn void on_recv_echo(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* a
 
 fn char[] on_alloc_default(async::udp::UdpSocket* socket, usz suggested_size, void* user_data)
 {
-    return mem::new_array(char, suggested_size);
+    return mem::new_array(char, (sz)suggested_size);
 }
 
 fn void on_send_complete(async::udp::UdpSocket* socket, int status, void* user_data)
@@ -154,7 +150,6 @@ fn void test_send_receive() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -172,7 +167,6 @@ fn void test_send_receive() @test
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
-        return;
     }
     async::udp::UdpSocket* receiver = receiver_opt;
     ctx.receiver = receiver;
@@ -188,7 +182,6 @@ fn void test_send_receive() @test
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
-        return;
     }
     async::udp::UdpSocket* sender = sender_opt;
     ctx.sender = sender;
@@ -269,7 +262,6 @@ fn void test_multiple_datagrams() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -286,7 +278,6 @@ fn void test_multiple_datagrams() @test
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
-        return;
     }
     async::udp::UdpSocket* receiver = receiver_opt;
 
@@ -298,7 +289,6 @@ fn void test_multiple_datagrams() @test
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
-        return;
     }
     async::udp::UdpSocket* sender = sender_opt;
 
@@ -397,7 +387,6 @@ fn void test_send_to_addr() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -413,7 +402,6 @@ fn void test_send_to_addr() @test
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
-        return;
     }
     async::udp::UdpSocket* receiver = receiver_opt;
 
@@ -425,7 +413,6 @@ fn void test_send_to_addr() @test
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
-        return;
     }
     async::udp::UdpSocket* sender = sender_opt;
 

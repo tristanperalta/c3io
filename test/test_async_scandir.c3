@@ -167,7 +167,6 @@ fn void test_scandir_basic() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -220,7 +219,6 @@ fn void test_scandir_nonexistent() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();

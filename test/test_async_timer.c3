@@ -31,7 +31,6 @@ fn void test_oneshot_timer() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -47,7 +46,6 @@ fn void test_oneshot_timer() @test
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
-        return;
     }
     async::timer::Timer* timer = timer_opt;
 
@@ -97,7 +95,6 @@ fn void test_repeating_timer() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -112,7 +109,6 @@ fn void test_repeating_timer() @test
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
-        return;
     }
     async::timer::Timer* timer = timer_opt;
 
@@ -155,7 +151,6 @@ fn void test_stop_timer() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -170,7 +165,6 @@ fn void test_stop_timer() @test
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
-        return;
     }
     async::timer::Timer* timer = timer_opt;
 
@@ -209,7 +203,6 @@ fn void test_set_get_repeat() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -218,7 +211,6 @@ fn void test_set_get_repeat() @test
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
-        return;
     }
     async::timer::Timer* timer = timer_opt;
 
@@ -269,7 +261,6 @@ fn void test_timer_again() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -284,7 +275,6 @@ fn void test_timer_again() @test
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
-        return;
     }
     async::timer::Timer* timer = timer_opt;
 
@@ -364,7 +354,6 @@ fn void test_multiple_timers() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
     EventLoop loop = loop_opt;
     defer loop.free();
@@ -380,7 +369,6 @@ fn void test_multiple_timers() @test
     if (catch err = timer1_opt)
     {
         assert(false, "Should create timer1");
-        return;
     }
     async::timer::Timer* timer1 = timer1_opt;
 
@@ -388,7 +376,6 @@ fn void test_multiple_timers() @test
     if (catch err = timer2_opt)
     {
         assert(false, "Should create timer2");
-        return;
     }
     async::timer::Timer* timer2 = timer2_opt;
 

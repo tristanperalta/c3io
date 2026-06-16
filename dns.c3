@@ -66,8 +66,7 @@ fn void on_resolve_internal(uv::GetAddrInfo* req, int status, uv::AddrInfo* res)
 
  @param loop : "Event loop to attach to"
 *>
-fn DnsResolver* create(event_loop::EventLoop* loop) @public
-{
+fn DnsResolver* create(event_loop::EventLoop* loop){
     DnsResolver* resolver = mem::new(DnsResolver);
     resolver.loop = loop;
     return resolver;
@@ -83,8 +82,7 @@ fn DnsResolver* create(event_loop::EventLoop* loop) @public
  @param user_data : "User data passed to callback"
 *>
 fn void DnsResolver.resolve(&self, String hostname, String service,
-                            ResolveCallback callback, void* user_data) @public
-{
+                            ResolveCallback callback, void* user_data){
     ResolveContext* ctx = mem::new(ResolveContext);
     ctx.cb = callback;
     ctx.user_data = user_data;
@@ -127,8 +125,7 @@ fn void DnsResolver.resolve(&self, String hostname, String service,
  @param user_data : "User data passed to callback"
 *>
 fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
-                                ResolveCallback callback, void* user_data) @public
-{
+                                ResolveCallback callback, void* user_data){
     ResolveContext* ctx = mem::new(ResolveContext);
     ctx.cb = callback;
     ctx.user_data = user_data;
@@ -167,8 +164,7 @@ fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
 
  @param result : "AddrInfo linked list to free"
 *>
-fn void free_result(uv::AddrInfo* result) @public
-{
+fn void free_result(uv::AddrInfo* result){
     if (result)
     {
         uv::freeaddrinfo(result);
@@ -181,8 +177,7 @@ fn void free_result(uv::AddrInfo* result) @public
 
  @param addr : "Socket address to convert"
 *>
-fn String addr_to_string(uv::Sockaddr* addr) @public
-{
+fn String addr_to_string(uv::Sockaddr* addr){
     if (!addr) return "";
 
     if (addr.sa_family == uv::AF_INET)

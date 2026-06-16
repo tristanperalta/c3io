@@ -65,8 +65,7 @@ fn void on_close_internal(uv::Handle* handle)
 
  @param loop : "Event loop to attach to"
 *>
-fn Timer*? create(event_loop::EventLoop* loop) @public
-{
+fn Timer*? create(event_loop::EventLoop* loop){
     // Allocate timer handle
     uv::Timer* handle = uv::alloc_handle(uv::Timer, uv::HandleType.TIMER);
 
@@ -76,7 +75,7 @@ fn Timer*? create(event_loop::EventLoop* loop) @public
     {
         free(handle);
         io::printfn("Failed to initialize timer handle: %s", (ZString)uv::strerror(result));
-        return TIMER_INIT_FAILED?;
+        return TIMER_INIT_FAILED~;
     }
 
     Timer* timer = mem::new(Timer);
@@ -100,8 +99,7 @@ fn Timer*? create(event_loop::EventLoop* loop) @public
  @param user_data : "User data passed to callback"
 *>
 fn void Timer.start(&self, ulong timeout_ms, ulong repeat_ms,
-                    TimeoutCallback callback, void* user_data) @public
-{
+                    TimeoutCallback callback, void* user_data){
     self.callback = callback;
     self.user_data = user_data;
 
@@ -115,8 +113,7 @@ fn void Timer.start(&self, ulong timeout_ms, ulong repeat_ms,
 <*
  Stop the timer.
 *>
-fn void Timer.stop(&self) @public
-{
+fn void Timer.stop(&self){
     uv::timer_stop(self.handle);
 }
 
@@ -124,8 +121,7 @@ fn void Timer.stop(&self) @public
  Close the timer and free resources.
  Note: This is async - the timer and handle will be freed when the close completes.
 *>
-fn void Timer.close(&self) @public
-{
+fn void Timer.close(&self){
     // Stop timer first
     uv::timer_stop(self.handle);
 
@@ -138,8 +134,7 @@ fn void Timer.close(&self) @public
  Restart a repeating timer.
  If the timer was stopped, this restarts it using the repeat value as the timeout.
 *>
-fn void Timer.again(&self) @public
-{
+fn void Timer.again(&self){
     uv::timer_again(self.handle);
 }
 
@@ -148,8 +143,7 @@ fn void Timer.again(&self) @public
 
  @param repeat_ms : "Repeat interval in milliseconds"
 *>
-fn void Timer.set_repeat(&self, ulong repeat_ms) @public
-{
+fn void Timer.set_repeat(&self, ulong repeat_ms){
     uv::timer_set_repeat(self.handle, repeat_ms);
 }
 
@@ -158,7 +152,6 @@ fn void Timer.set_repeat(&self, ulong repeat_ms) @public
 
  @return "Repeat interval in milliseconds"
 *>
-fn ulong Timer.get_repeat(&self) @public
-{
+fn ulong Timer.get_repeat(&self){
     return uv::timer_get_repeat(self.handle);
 }

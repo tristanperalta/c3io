@@ -38,11 +38,10 @@ struct EventLoop
 <*
  Create and initialize an event loop.
 *>
-fn EventLoop? create() @public
-{
+fn EventLoop? create(){
     // Allocate loop structure
     usz loop_size = uv::loop_size();
-    uv::Loop* loop = mem::new_array(char, loop_size);
+    uv::Loop* loop = mem::new_array(char, (sz)loop_size);
 
     // Initialize the loop
     int result = uv::loop_init(loop);
@@ -50,7 +49,7 @@ fn EventLoop? create() @public
     {
         free(loop);
         io::printfn("Failed to initialize event loop: %s", (ZString)uv::strerror(result));
-        return EVENT_LOOP_INIT_FAILED?;
+        return EVENT_LOOP_INIT_FAILED~;
     }
 
     return (EventLoop){ loop };
@@ -60,8 +59,7 @@ fn EventLoop? create() @public
  Run the event loop until there are no more active handles.
  This blocks until all async operations complete.
 *>
-fn void? EventLoop.run(&self) @public
-{
+fn void? EventLoop.run(&self){
     int result = uv::run(self.loop, uv::RunMode.DEFAULT);
     uv::@uv_check(result, "Event loop run failed", EVENT_LOOP_RUN_FAILED)!;
 }
@@ -70,8 +68,7 @@ fn void? EventLoop.run(&self) @public
  Run the event loop in non-blocking mode (process pending events only).
  Returns true if there are still active handles, false otherwise.
 *>
-fn bool EventLoop.run_nowait(&self) @public
-{
+fn bool EventLoop.run_nowait(&self){
     int result = uv::run(self.loop, uv::RunMode.NOWAIT);
     return uv::loop_alive(self.loop) != 0;
 }
@@ -80,8 +77,7 @@ fn bool EventLoop.run_nowait(&self) @public
  Run the event loop once (process one event).
  Returns true if there are still active handles, false otherwise.
 *>
-fn bool EventLoop.run_once(&self) @public
-{
+fn bool EventLoop.run_once(&self){
     uv::run(self.loop, uv::RunMode.ONCE);
     return uv::loop_alive(self.loop) != 0;
 }
@@ -90,8 +86,7 @@ fn bool EventLoop.run_once(&self) @public
  Stop the event loop.
  Causes run() to return at the earliest safe point.
 *>
-fn void EventLoop.stop(&self) @public
-{
+fn void EventLoop.stop(&self){
     uv::stop(self.loop);
 }
 
@@ -99,8 +94,7 @@ fn void EventLoop.stop(&self) @public
  Check if the event loop has active handles or requests.
  Returns true if there are active operations, false otherwise.
 *>
-fn bool EventLoop.is_alive(&self) @public
-{
+fn bool EventLoop.is_alive(&self){
     return uv::loop_alive(self.loop) != 0;
 }
 
@@ -145,8 +139,7 @@ fn void close_walk_cb(uv::Handle* handle, void* arg)
 
  Call this before close() to ensure clean shutdown.
 *>
-fn void EventLoop.close_all_handles(&self) @public
-{
+fn void EventLoop.close_all_handles(&self){
     // Walk through all handles and close them
     uv::walk(self.loop, &close_walk_cb, null);
 
@@ -159,17 +152,16 @@ fn void EventLoop.close_all_handles(&self) @public
  Close and free the event loop.
  All handles must be closed before calling this.
 *>
-fn void? EventLoop.close(&self) @public
-{
+fn void? EventLoop.close(&self){
     int result = uv::loop_close(self.loop);
     if (result != 0)
     {
         io::printfn("Failed to close event loop: %s", (ZString)uv::strerror(result));
         if (result == -16)  // UV_EBUSY
         {
-            return EVENT_LOOP_STILL_ACTIVE?;
+            return EVENT_LOOP_STILL_ACTIVE~;
         }
-        return EVENT_LOOP_CLOSE_FAILED?;
+        return EVENT_LOOP_CLOSE_FAILED~;
     }
 }
 
@@ -177,8 +169,7 @@ fn void? EventLoop.close(&self) @public
  Free the event loop (close and deallocate).
  This is the main cleanup method.
 *>
-fn void EventLoop.free(&self) @public
-{
+fn void EventLoop.free(&self){
     // Try to close the loop
     if (catch err = self.close())
     {
@@ -260,11 +251,10 @@ fn void after_work_in_event_loop(uv::Work* req, int status)
  @param ctx : "Work context (caller must allocate)"
  @return "0 on success, negative error code on failure"
 *>
-fn int EventLoop.queue_work(&self, WorkContext* ctx) @public
-{
+fn int EventLoop.queue_work(&self, WorkContext* ctx){
     // Allocate uv_work_t handle
     usz work_size = uv::req_size(uv::ReqType.WORK);
-    ctx.work_req = mem::new_array(char, work_size);
+    ctx.work_req = mem::new_array(char, (sz)work_size);
     uv::req_set_data((uv::Req*)ctx.work_req, ctx);
 
     // Queue work

@@ -13,7 +13,6 @@ fn void test_tcp_create_and_close() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
@@ -23,7 +22,6 @@ fn void test_tcp_create_and_close() @test
     if (catch err = conn_opt)
     {
         assert(false, "Should create TCP connection");
-        return;
     }
 
     async::tcp::TcpConnection* conn = conn_opt;
@@ -37,73 +35,89 @@ fn void test_tcp_create_and_close() @test
 }
 
 <*
- Connection callback for testing.
- Stores result in user_data.
+ Shared state for the loopback connect/accept test.
 *>
-struct ConnectResult
+struct LoopbackState
 {
-    bool called;
-    int status;
+    bool connected;
+    bool accepted;
+    int connect_status;
 }
 
-fn void on_test_connect(async::tcp::TcpConnection* conn, int status, void* user_data)
+// Client side: the connect completed (success or failure).
+fn void on_loopback_connect(async::tcp::TcpConnection* conn, int status, void* user_data)
 {
-    ConnectResult* result = user_data;
-    result.called = true;
-    result.status = status;
+    LoopbackState* state = user_data;
+    state.connected = true;
+    state.connect_status = status;
+    conn.close();  // close the client side; freed async
+}
 
-    // Close the connection (will be freed async)
-    conn.close();
-    // Don't stop the loop yet - let the close callback run
+// Server side: a client was accepted.
+fn void on_loopback_accept(async::tcp::TcpConnection* server, async::tcp::TcpConnection* client, void* user_data)
+{
+    LoopbackState* state = user_data;
+    state.accepted = true;
+    client.close();  // close the accepted (server-side) client
+    server.close();  // stop listening so the loop can drain and run() returns
 }
 
 <*
- Test connecting to a real server (google.com:80).
- This is an integration test that requires internet connection.
+ Test a real TCP connect + accept over the loopback interface (127.0.0.1).
+ Starts an in-process server, connects a client to it, and verifies both the
+ client connect callback and the server accept callback fire. No external network
+ is used, so this completes in milliseconds and is deterministic.
 *>
-fn void test_tcp_connect_real_server() @test
+fn void test_tcp_connect_loopback() @test
 {
     event_loop::EventLoop? loop_opt = event_loop::create();
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
     defer loop.free();
 
-    ConnectResult result;
-    result.called = false;
-    result.status = -1;
+    LoopbackState state;
+    state.connected = false;
+    state.accepted = false;
+    state.connect_status = -1;
 
-    // Connect to Google's HTTP server
+    ushort port = 47921;
+
+    // Start a localhost server.
+    async::tcp::TcpConnection*? server_opt = async::tcp::create(&loop);
+    if (catch err = server_opt)
+    {
+        assert(false, "Should create server connection");
+    }
+    async::tcp::TcpConnection* server = server_opt;
+
+    if (catch err = server.bind("127.0.0.1", port))
+    {
+        assert(false, "Should bind server to 127.0.0.1");
+    }
+    if (catch err = server.listen(128, &on_loopback_accept, &state))
+    {
+        assert(false, "Should listen on server");
+    }
+
+    // Connect a client to the server.
     async::tcp::TcpConnection*? conn_opt = async::tcp::connect(
-        &loop, "142.250.185.46", 80, &on_test_connect, &result
+        &loop, "127.0.0.1", port, &on_loopback_connect, &state
     );
-
     if (catch err = conn_opt)
     {
-        io::printfn("Warning: Could not connect (network issue?): %s", err);
-        // Don't fail the test - might not have internet
-        return;
+        assert(false, "Should initiate loopback connect");
     }
 
-    async::tcp::TcpConnection* conn = conn_opt;
-    // Note: connection is closed in the callback, no need for defer
-
-    // Run event loop until connection completes and closes
+    // Runs until the client, the accepted client, and the server are all closed.
     (void)loop.run();
 
-    assert(result.called, "Connect callback should be called");
-    if (result.status == 0)
-    {
-        io::printfn("✓ Successfully connected to Google");
-    }
-    else
-    {
-        io::printfn("Connection failed with status: %d (network issue?)", result.status);
-    }
+    assert(state.connected, "Client connect callback should fire");
+    assert(state.accepted, "Server accept callback should fire");
+    assert(state.connect_status == 0, "Loopback connect should succeed");
 }
 
 <*
@@ -115,7 +129,6 @@ fn void test_tcp_options() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
@@ -125,7 +138,6 @@ fn void test_tcp_options() @test
     if (catch err = conn_opt)
     {
         assert(false, "Should create TCP connection");
-        return;
     }
 
     async::tcp::TcpConnection* conn = conn_opt;
@@ -134,14 +146,12 @@ fn void test_tcp_options() @test
     if (catch err = conn.set_nodelay(true))
     {
         assert(false, "Should set TCP_NODELAY");
-        return;
     }
 
     // Test keepalive
     if (catch err = conn.set_keepalive(true, 60))
     {
         assert(false, "Should set TCP keepalive");
-        return;
     }
 
     conn.close();
@@ -163,7 +173,7 @@ struct ReadResult
 fn char[] on_test_alloc(async::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
 {
     // Allocate a buffer for reading
-    char[] buf = mem::new_array(char, suggested_size);
+    char[] buf = mem::new_array(char, (sz)suggested_size);
     return buf;
 }
 

@@ -96,8 +96,7 @@ fn void after_work_in_event_loop(uv::Work* req, int status)
  @param ctx : "Work context (caller must allocate)"
  @return "0 on success, negative error code on failure"
 *>
-fn int queue_work(event_loop::EventLoop* loop, event_loop::WorkContext* ctx) @public
-{
+fn int queue_work(event_loop::EventLoop* loop, event_loop::WorkContext* ctx){
     // Forward to EventLoop method
     return loop.queue_work(ctx);
 }

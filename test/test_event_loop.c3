@@ -12,7 +12,6 @@ fn void test_event_loop_create_and_free() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop successfully");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
@@ -31,7 +30,6 @@ fn void test_event_loop_run_empty() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
@@ -52,7 +50,6 @@ fn void test_event_loop_is_alive() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;
@@ -71,7 +68,6 @@ fn void test_event_loop_run_modes() @test
     if (catch err = loop_opt)
     {
         assert(false, "Should create event loop");
-        return;
     }
 
     event_loop::EventLoop loop = loop_opt;

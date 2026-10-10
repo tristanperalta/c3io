@@ -4,20 +4,45 @@
     "Tristan Peralta <tristan@peralta.ph>",
     "Claude Code <noreply@anthropic.com>"
   ],
-  "version": "0.2.1",
-  "warnings": ["no-unused"],
-  "sources": ["c3io.c3", "dns.c3", "event_loop.c3", "file.c3", "fswatch.c3", "net.c3", "tcp.c3", "timer.c3", "udp.c3", "uv.c3i", "work.c3"],
-  "test-sources": ["test/**"],
+  "version": "0.3.0",
+  "warnings": [
+    "no-unused"
+  ],
+  "dependency-search-paths": [
+    "."
+  ],
+  "dependencies": [
+    "c3io"
+  ],
   "output": ".",
   "targets": {
+    "c3io-tests": {
+      "type": "test",
+      "sources": [
+        "test/**"
+      ]
+    },
     "c3io": {
       "type": "static-lib",
-      "linked-libraries": ["uv"]
+      "sources": [
+        "c3io.c3l/**"
+      ],
+      "dependencies-override": [],
+      "linked-libraries": [
+        "uv"
+      ]
     },
     "timer-example": {
       "type": "executable",
-      "sources": ["examples/timer_example.c3"],
-      "linked-libraries": ["uv"]
+      "sources": [
+        "examples/timer_example.c3"
+      ]
+    },
+    "http-server": {
+      "type": "executable",
+      "sources": [
+        "examples/http_server.c3"
+      ]
     }
   },
   "link-libc": true

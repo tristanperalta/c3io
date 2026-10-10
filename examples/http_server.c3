@@ -1,75 +1,63 @@
+// A minimal HTTP server: answers every request with "Hello, World!" and
+// closes the connection. Run it and open http://localhost:8080.
 import std::io;
+import c3io;
 import c3io::event_loop;
 import c3io::tcp;
+import c3io::net;
+import c3io::uv;
 
-fn char[] on_alloc(c3io::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
-{
-  return mem::new_array(char, suggested_size);
-}
+const String RESPONSE = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\nConnection: close\r\n\r\nHello, World!";
 
-fn void on_read(c3io::tcp::TcpConnection* client, char[] data, void* user_data)
+fn void on_write(TcpConnection* client, int status, void* user_data)
 {
-  if (data.len == 0)
-  {
-    // EOF - client closed connection
-    io::printfn("Client disconnected");
+    if (status != 0) io::eprintfn("Write failed: %s", c3io::error_message(status));
     client.close();
-    return;
-  }
-
-  io::printfn("Received %d bytes: %s", data.len, (String)data);
-
-  String response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello, World!";
-  client.write((char[])response.ptr[:response.len], &on_write)!!;
 }
 
-fn void on_write(c3io::tcp::TcpConnection* client, int status, void* user_data)
+fn void on_read(TcpConnection* client, int status, char[] data, void* user_data)
 {
-  if (status != 0)
-  {
-    io::eprintfn("Write failed");
-  }
-  client.close();
+    if (status == uv::UV_EOF)
+    {
+        client.close();
+        return;
+    }
+    if (status != 0)
+    {
+        io::eprintfn("Read failed: %s", c3io::error_message(status));
+        client.close();
+        return;
+    }
+    // A real server would parse the request; this one answers the first read.
+    (void)client.read_stop();
+    if (catch client.write(RESPONSE, &on_write)) client.close();
 }
 
-fn void on_connection(c3io::tcp::TcpConnection* server, c3io::tcp::TcpConnection* client, void* user_data)
+fn void on_accept(TcpConnection* server, int status, TcpConnection* client, void* user_data)
 {
-  io::printfn("New client connected!");
-
-  // Start reading from client
-  client.start_read(&on_alloc, &on_read)!!;
+    if (status != 0)
+    {
+        io::eprintfn("Accept failed: %s", c3io::error_message(status));
+        return;
+    }
+    if (try peer = client.peer_addr()) io::printfn("Connection from %s", peer);
+    if (catch client.read_start(&on_read)) client.close();
 }
 
 fn int main()
 {
-  event_loop::EventLoop? loop_opt = event_loop::create();
-  if (catch err = loop_opt)
-  {
-    io::eprintfn("Failed to create event loop");
-    return 1;
-  }
-  event_loop::EventLoop loop = loop_opt;
-  defer
-  {
-      while (!loop.shutdown()) {}
-      loop.free()!!;
-  }
+    EventLoop loop = event_loop::create()!!;
+    defer
+    {
+        while (!loop.shutdown()) {}
+        loop.free()!!;
+    }
 
-  c3io::tcp::TcpConnection*? server_opt = c3io::tcp::create(&loop);
-  if (catch err = server_opt)
-  {
-    io::eprintfn("Failed to create server");
-    return 1;
-  }
-  c3io::tcp::TcpConnection* server = server_opt;
-  defer server.close();
+    TcpConnection* server = tcp::create(&loop)!!;
+    server.bind(net::addr("0.0.0.0", 8080)!!)!!;
+    server.listen(128, &on_accept)!!;
+    io::printfn("Listening on http://localhost:8080");
 
-  server.bind("0.0.0.0", 8080)!!;
-  io::printfn("Server listening on http://0.0.0.0:8080");
-
-  server.listen(128, &on_connection)!!;
-
-  loop.run()!!;
-
-  return 0;
+    loop.run()!!;
+    return 0;
 }

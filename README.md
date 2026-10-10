@@ -1,157 +1,149 @@
-# c3io - Async I/O Library for C3
+# c3io - Async I/O for C3
 
-An async I/O library for C3 providing ergonomic wrappers around libuv for non-blocking network and file operations.
+c3io wraps [libuv](https://libuv.org/) in C3 modules for non-blocking networking, file I/O and background
+work. It suits programs that already run their own loop, such as games: poll it once per frame with
+`run_nowait()` and nothing blocks.
 
-## Overview
+## Modules
 
-c3io is a standalone library that provides high-level async I/O primitives built on top of libuv. It includes C3 bindings for libuv and offers an event-driven programming model with support for TCP, UDP, timers, DNS resolution, file operations, and work queue management.
+| Module | Purpose |
+|---|---|
+| `c3io::event_loop` | The loop: run modes, cancellation, non-blocking shutdown |
+| `c3io::net` | `SocketAddr`: an IPv4 or IPv6 address and port, comparable and hashable |
+| `c3io::udp` | UDP sockets: `try_send`, pooled `send`, connected sockets, broadcast |
+| `c3io::tcp` | TCP clients and servers: `try_write`, pooled `write` |
+| `c3io::file` | File operations, including `read_all` for loading a whole file |
+| `c3io::fswatch` | File change notifications (`FileWatcher`) and stat polling (`FilePoller`) |
+| `c3io::work` | Run functions on libuv's thread pool, with a completion on the loop thread |
+| `c3io::dns` | Asynchronous name resolution |
+| `c3io::timer` | One-shot and repeating timers |
+| `c3io` | Error helpers (`last_status`, `error_name`, `error_message`) |
+| `c3io::uv` | The raw libuv bindings the modules are built on |
 
-## Features
+## Requirements
 
-### High-Level Async Modules
+- C3 compiler 0.8.4 or later
+- libuv 1.x
 
-- **Event Loop** (`c3io::event_loop`) - Core event loop management
-- **TCP** (`c3io::tcp`) - Async TCP client and server operations
-- **UDP** (`c3io::udp`) - Async UDP socket operations
-- **Timer** (`c3io::timer`) - One-shot and periodic timers
-- **DNS** (`c3io::dns`) - Async DNS resolution
-- **File** (`c3io::file`) - Async file I/O operations
-- **Work Queue** (`c3io::work`) - Thread pool for CPU-intensive tasks
-
-### Low-Level Bindings
-
-- **libuv Bindings** (`uv`) - C3 bindings for libuv API
-
-## Dependencies
-
-- **libuv** - Cross-platform async I/O library
-- **C3 compiler** - Version 0.8.4 or later
-
-### Installing libuv
-
-**Arch Linux:**
-```bash
-sudo pacman -S libuv
-```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt install libuv1-dev
-```
-
-**macOS:**
-```bash
-brew install libuv
-```
-
-**Fedora:**
-```bash
-sudo dnf install libuv-devel
-```
-
-## Building
+Install libuv with your package manager:
 
 ```bash
-c3c build
+sudo pacman -S libuv          # Arch Linux
+sudo apt install libuv1-dev   # Debian/Ubuntu
+sudo dnf install libuv-devel  # Fedora
+brew install libuv            # macOS
+vcpkg install libuv           # Windows
 ```
 
-This will create `c3io.a` in the build directory.
+c3io runs on Linux, macOS and Windows; CI builds and tests all three.
 
-## Testing
+## Using c3io in a project
 
-```bash
-c3c test
-```
-
-The test suite covers all async modules.
-
-## Usage
-
-### As a Git Submodule
-
-Add c3io as a submodule to your project:
-
-```bash
-git submodule add https://github.com/YOUR_USERNAME/c3io.git lib/c3io
-git submodule update --init --recursive
-```
-
-### As a Dependency
-
-Add to your `project.json`:
+The library is the `c3io.c3l` directory. Copy it (or add this repository as a submodule) under your
+project's library folder and declare the dependency in `project.json`:
 
 ```json
 {
-  "dependencies": ["c3io"],
-  "dependency-search-paths": ["lib/c3io"]
+  "dependency-search-paths": ["lib"],
+  "dependencies": ["c3io"]
 }
 ```
 
-### Example Code
+The library's `manifest.json` links libuv and, on Windows, the system libraries libuv needs. If libuv is
+installed somewhere the linker doesn't search by default, add the directory with `-L`, for example
+`c3c build -L /opt/homebrew/lib`.
 
-Import the modules you need:
+## Example: a UDP game server
 
 ```c3
-import async::event_loop;
-import async::timer;
-import std::io;
+import c3io;
+import c3io::event_loop;
+import c3io::udp;
+import c3io::net;
+import std::collections::map;
 
-fn void on_timer(async::timer::Timer* timer, void* user_data)
+HashMap{SocketAddr, int} players;
+
+fn void on_packet(UdpSocket* socket, int status, char[] data, SocketAddr* from, bool truncated,
+                  void* user_data)
 {
-    io::printfn("Timer fired!");
-    timer.stop();
-    timer.close();  // Clean up after firing
+    if (status != 0) return;
+    if (!players.has_key(*from)) players.set(*from, (int)players.len());
+    // data is only valid until this callback returns.
+    (void)socket.try_send(from, "ack");
 }
 
-fn int main()
+fn void main()
 {
-    // Create event loop
-    event_loop::EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
+    EventLoop loop = event_loop::create()!!;
+    players.init(mem);
+
+    UdpSocket* socket = udp::create(&loop)!!;
+    socket.bind(net::addr("::", 7777)!!)!!;  // IPv6 and, on dual-stack systems, IPv4
+    socket.recv_start(&on_packet)!!;
+
+    while (running())
     {
-        io::eprintfn("Failed to create event loop");
-        return 1;
+        loop.run_nowait();  // Handle whatever arrived; never blocks
+        update_and_render();
     }
-    event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
 
-    // Create a timer
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
-    if (catch err = timer_opt)
-    {
-        io::eprintfn("Failed to create timer");
-        return 1;
-    }
-    async::timer::Timer* timer = timer_opt;
-
-    // Start timer (1 second, non-repeating)
-    timer.start(1000, 0, &on_timer, null);
-
-    // Run event loop until all handles are closed
-    loop.run()!!;
-
-    return 0;
+    while (!loop.shutdown()) {}  // Close everything; see "Shutting down"
+    loop.free()!!;
 }
 ```
 
-For more examples, see the `test/` directory.
+`examples/` has a timer example and a minimal HTTP server; `test/` exercises every module.
+
+## How c3io behaves
+
+**Errors.** c3io never prints. A call that fails returns a fault, and `c3io::last_status()` gives the
+libuv code behind it. Asynchronous callbacks receive the libuv code as `status`: 0 for success, negative
+for an error. `c3io::error_name(code)` and `c3io::error_message(code)` turn a code into text. If an
+operation can't be started, the call fails and its callback is never called.
+
+**Allocators.** `event_loop::create(allocator)` sets the allocator for everything created on the loop.
+Every `create()`, file call, resolver and work item also takes an optional allocator that overrides the
+loop's, so a level or server session can use its own arena. libuv's own internal allocations still use
+libc.
+
+**Receive buffers.** Without an allocate callback, each UDP socket or TCP connection reads into one buffer
+that it reuses, and the data passed to the callback is valid only until the callback returns. With an
+allocate callback, the buffers are yours and c3io never frees them.
+
+**Sending without allocating.** `UdpSocket.try_send` and `TcpConnection.try_write` hand data straight to
+the kernel, with no allocation and no callback, and fail with `UDP_WOULD_BLOCK`/`TCP_WOULD_BLOCK` when
+the kernel is busy. `send` and `write` copy the data and queue it; small messages reuse pooled memory, so
+steady traffic stops allocating once the pool is warm.
+
+**Threads.** Callbacks run on the loop thread, inside `run()`/`run_nowait()`. The one exception is the
+work function passed to `work::queue`, which runs on a thread pool thread; its `after` callback runs on the
+loop thread, which is where results such as GPU uploads belong. File operations and DNS queries also use
+the thread pool, which has 4 threads unless `UV_THREADPOOL_SIZE` says otherwise.
+
+**Cancelling.** File operations, work items and DNS queries return a `RequestId`. `loop.cancel(id)`
+cancels one that hasn't started yet, and its callback then runs with `UV_ECANCELED`. Work that is already
+running can't be interrupted.
+
+**Shutting down.** `loop.shutdown()` cancels pending requests, closes every handle, runs a bounded number
+of non-blocking iterations and returns whether the loop is done. If work is still running on the thread
+pool it returns false; call it again on a later frame. `loop.free()` refuses, with
+`EVENT_LOOP_STILL_ACTIVE`, until the loop is done.
+
+## Building and testing
+
+```bash
+c3c build                  # builds the static library c3io.a
+c3c test                   # runs the test suite
+c3c test --sanitize=address
+c3c build timer-example    # or http-server
+```
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Authors
 
 - Tristan Peralta <tristan@peralta.ph>
 - Claude Code <noreply@anthropic.com>
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues.
-
-### Platforms
-
-Currently, c3io is primarily developed and tested on Linux. **We are actively looking for contributors to help with Windows and macOS support.**
-
-If you have experience with:
-- Windows async I/O (IOCP)
-- macOS kqueue/Grand Central Dispatch
-- Cross-platform testing and CI/CD
-
-Please consider contributing! The library is built on libuv which already supports these platforms, so most of the work involves testing and ensuring the C3 bindings work correctly across all platforms.

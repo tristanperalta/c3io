@@ -16,3 +16,7 @@ testrun
 # OS
 .DS_Store
 Thumbs.db
+
+# Example binaries
+timer-example
+http-server

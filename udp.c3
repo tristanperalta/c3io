@@ -3,41 +3,71 @@ module c3io::udp;
 import c3io;
 import c3io::uv;
 import c3io::event_loop;
+import c3io::net;
 
 <*
- Async UDP Socket Wrapper for libuv
- ===================================
- Provides async UDP socket operations using libuv.
-
- UDP is connectionless, so you can send/receive without "connecting".
+ Async UDP sockets
+ =================
+ UDP is connectionless: a socket can send to any address, and receives
+ datagrams from anyone once it is bound.
 
  Usage:
-   UdpSocket* socket = c3io::udp::create(loop);
-   socket.bind("0.0.0.0", 6881);  // Optional - can send without binding
-   socket.recv_start(&on_alloc, &on_recv, user_data);
-   socket.send(addr, data, &on_send, user_data);
-   // Later:
+   UdpSocket* socket = udp::create(loop)!;
+   socket.bind(net::addr("0.0.0.0", 7777)!)!;  // "::" binds IPv6 and IPv4
+   socket.recv_start(&on_recv, user_data)!;
+
+   SocketAddr peer = net::addr("192.168.1.20", 7777)!;
+   socket.try_send(&peer, packet)!;            // no allocation, no callback
+   socket.send(&peer, packet, &on_sent)!;      // queued if the kernel is busy
+
    socket.close();
+
+ Receiving: without an allocate callback, the socket receives into one buffer
+ of RECV_BUFFER_SIZE bytes that it reuses, so receiving allocates nothing.
+ The `data` slice passed to the receive callback is only valid until the
+ callback returns. With an allocate callback, the buffers are the caller's and
+ c3io never frees them.
 *>
 
-// Faults
 excuse
 {
     UDP_INIT_FAILED,
     UDP_BIND_FAILED,
+    UDP_CONNECT_FAILED,
     UDP_SEND_FAILED,
+    UDP_WOULD_BLOCK,
     UDP_RECV_FAILED,
+    UDP_OPTION_FAILED,
 }
 
-// Callback types
+<*
+ Called when a queued send completes. status is 0 on success, UV_ECANCELED if
+ the socket was closed first, or another negative libuv error.
+*>
 alias SendCallback = fn void(UdpSocket* socket, int status, void* user_data);
-alias RecvCallback = fn void(UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data);
-alias AllocCallback = fn char[](UdpSocket* socket, usz suggested_size, void* user_data);
 
 <*
- UDP socket state.
- Wraps a libuv UDP handle and provides async I/O.
+ Called for each received datagram (status 0) or receive error (status < 0).
+ `from` is the sender, null on error. `truncated` means the datagram was
+ larger than the buffer. A zero-length datagram arrives as status 0 with empty
+ data. `data.ptr` is the receive buffer even when `data` is empty.
 *>
+alias RecvCallback = fn void(UdpSocket* socket, int status, char[] data, SocketAddr* from,
+                             bool truncated, void* user_data);
+
+<*
+ Returns a buffer for the next datagram. The buffer belongs to the caller; it
+ may be reused once the receive callback for it has returned.
+*>
+alias AllocCallback = fn char[](UdpSocket* socket, usz suggested_size, void* user_data);
+
+const usz RECV_BUFFER_SIZE = 64 * 1024;
+
+// Sends of up to SEND_POOL_CAPACITY bytes reuse pooled contexts, which covers
+// datagrams that fit an Ethernet MTU.
+const usz SEND_POOL_CAPACITY = 1500;
+const int SEND_POOL_MAX = 64;
+
 struct UdpSocket
 {
     event_loop::HandleOwner owner;
@@ -47,86 +77,121 @@ struct UdpSocket
     RecvCallback recv_cb;
     AllocCallback alloc_cb;
     void* recv_user_data;
+    char[] recv_buffer;       // Reused for every receive when alloc_cb is null
+    SendContext* send_pool;   // Free send contexts with SEND_POOL_CAPACITY bytes of room
+    int send_pool_count;
 }
 
 <*
- Send request context.
- Stores the send request and callback.
+ A queued send. One allocation holds this struct, the uv request and a copy
+ of the data, in that order.
 *>
 struct SendContext
 {
-    uv::UdpSend* req;
+    SendContext* next_free;
     UdpSocket* socket;
     SendCallback cb;
     void* user_data;
-    uv::Buf* bufs;  // Keep buffer alive until send completes
+    usz capacity;
+    uv::UdpSend* req;
+    char* data;
+    uv::Buf buf;
 }
 
-// Internal libuv callback wrappers
-fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf)
+macro usz align16(usz n) @private => (n + 15) & ~(usz)15;
+
+fn SendContext* UdpSocket.acquire_send(&self, usz len)
+{
+    if (len <= SEND_POOL_CAPACITY && self.send_pool)
+    {
+        SendContext* ctx = self.send_pool;
+        self.send_pool = ctx.next_free;
+        self.send_pool_count--;
+        return ctx;
+    }
+    usz capacity = len <= SEND_POOL_CAPACITY ? SEND_POOL_CAPACITY : len;
+    usz req_offset = align16(SendContext::size);
+    usz data_offset = req_offset + align16(uv::req_size(uv::ReqType.UDP_SEND));
+    char* block = alloc::calloc(self.allocator, (sz)(data_offset + capacity));
+    SendContext* ctx = (SendContext*)block;
+    ctx.socket = self;
+    ctx.capacity = capacity;
+    ctx.req = (uv::UdpSend*)(block + req_offset);
+    ctx.data = block + data_offset;
+    uv::req_set(ctx.req, ctx);
+    return ctx;
+}
+
+fn void UdpSocket.release_send(&self, SendContext* ctx)
+{
+    if (ctx.capacity == SEND_POOL_CAPACITY && self.send_pool_count < SEND_POOL_MAX)
+    {
+        ctx.next_free = self.send_pool;
+        self.send_pool = ctx;
+        self.send_pool_count++;
+        return;
+    }
+    alloc::free(self.allocator, ctx);
+}
+
+fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf) @private
 {
     UdpSocket* socket = uv::handle_get(UdpSocket, handle);
-
+    char[] target;
     if (socket.alloc_cb)
     {
-        char[] user_buf = socket.alloc_cb(socket, suggested_size, socket.recv_user_data);
-        buf.base = user_buf.ptr;
-        buf.len = user_buf.len;
+        target = socket.alloc_cb(socket, suggested_size, socket.recv_user_data);
     }
     else
     {
-        // Default allocation
-        buf.base = alloc::new_array(socket.allocator, char, (sz)suggested_size);
-        buf.len = suggested_size;
-    }
-}
-
-fn void on_recv_internal(uv::Udp* handle, sz nread, uv::Buf* buf, uv::Sockaddr* addr, uint flags)
-{
-    UdpSocket* socket = uv::handle_get(UdpSocket, handle);
-
-    if (socket.recv_cb)
-    {
-        char[] data = {};
-        if (nread > 0)
+        if (!socket.recv_buffer.ptr)
         {
-            data = ((char*)buf.base)[:nread];
+            socket.recv_buffer = alloc::new_array(socket.allocator, char, (sz)RECV_BUFFER_SIZE);
         }
-
-        socket.recv_cb(socket, data, addr, socket.recv_user_data);
+        target = socket.recv_buffer;
     }
-
-    // Free the buffer
-    if (buf.base)
-    {
-        alloc::free(socket.allocator, buf.base);
-    }
+    buf.base = target.ptr;
+    buf.len = target.len;
 }
 
-fn void on_send_internal(uv::UdpSend* req, int status)
+fn void on_recv_internal(uv::Udp* handle, sz nread, uv::Buf* buf, uv::Sockaddr* addr, uint flags) @private
+{
+    // libuv's "nothing more to read for now": no datagram, no error.
+    if (nread == 0 && addr == null) return;
+
+    UdpSocket* socket = uv::handle_get(UdpSocket, handle);
+    if (!socket.recv_cb) return;
+
+    char* base = (char*)buf.base;
+    if (nread < 0)
+    {
+        socket.recv_cb(socket, (int)nread, base[:0], null, false, socket.recv_user_data);
+        return;
+    }
+    SocketAddr from = net::from_sockaddr(addr);
+    bool truncated = (flags & uv::UV_UDP_PARTIAL) != 0;
+    socket.recv_cb(socket, 0, base[:nread], &from, truncated, socket.recv_user_data);
+}
+
+fn void on_send_internal(uv::UdpSend* req, int status) @private
 {
     SendContext* ctx = uv::req_get(SendContext, req);
-
-    if (ctx.cb)
-    {
-        ctx.cb(ctx.socket, status, ctx.user_data);
-    }
-
-    // Clean up (including copied data buffer)
-    Allocator allocator = ctx.socket.allocator;
-    if (ctx.bufs != null)
-    {
-        alloc::free(allocator, ctx.bufs.base);  // Free the copied data
-        alloc::free(allocator, ctx.bufs);
-    }
-    alloc::free(allocator, ctx.req);
-    alloc::free(allocator, ctx);
+    UdpSocket* socket = ctx.socket;
+    if (ctx.cb) ctx.cb(socket, status, ctx.user_data);
+    socket.release_send(ctx);
 }
 
-fn void on_close_internal(uv::Handle* handle)
+fn void on_close_internal(uv::Handle* handle) @private
 {
     UdpSocket* socket = uv::handle_get(UdpSocket, handle);
     Allocator allocator = socket.allocator;
+    while (socket.send_pool)
+    {
+        SendContext* next = socket.send_pool.next_free;
+        alloc::free(allocator, socket.send_pool);
+        socket.send_pool = next;
+    }
+    if (socket.recv_buffer.ptr) alloc::free(allocator, socket.recv_buffer.ptr);
     alloc::free(allocator, handle);
     alloc::free(allocator, socket);
 }
@@ -137,7 +202,8 @@ fn void on_close_internal(uv::Handle* handle)
  @param loop : "Event loop to attach to"
  @param allocator : "Allocator for the socket and its buffers (default: the loop's)"
 *>
-fn UdpSocket*? create(event_loop::EventLoop* loop, Allocator allocator = null){
+fn UdpSocket*? create(event_loop::EventLoop* loop, Allocator allocator = null)
+{
     allocator = loop.allocator_or(allocator);
     uv::Udp* handle = c3io::alloc_handle(allocator, uv::Udp, uv::HandleType.UDP);
 
@@ -159,168 +225,183 @@ fn UdpSocket*? create(event_loop::EventLoop* loop, Allocator allocator = null){
 }
 
 <*
- Bind the UDP socket to a local address.
- This is optional - you can send without binding.
+ Bind the socket to a local address. Binding "::" also accepts IPv4 traffic
+ unless ipv6_only is set (on systems that support dual-stack sockets).
 
- @param ip : "IP address to bind to (e.g., 0.0.0.0 for any)"
- @param port : "Port number to bind to"
+ @param addr : "Local address; port 0 lets the system choose"
+ @param reuse_addr : "Allow other sockets to bind the same address"
+ @param ipv6_only : "For an IPv6 address, don't accept IPv4 traffic"
 *>
-fn void? UdpSocket.bind(&self, String ip, int port){
-    uv::Sockaddr_in addr;
-    int result;
-    @pool()
-    {
-        result = uv::ip4_addr(ip.zstr_tcopy(), port, &addr);
-    };
-    c3io::@check(result, UDP_BIND_FAILED)!;
-    c3io::@check(uv::udp_bind(self.handle, (uv::Sockaddr*)&addr, uv::UV_UDP_REUSEADDR), UDP_BIND_FAILED)!;
+fn void? UdpSocket.bind(&self, SocketAddr addr, bool reuse_addr = true, bool ipv6_only = false)
+{
+    uint flags = reuse_addr ? uv::UV_UDP_REUSEADDR : 0;
+    if (ipv6_only) flags |= uv::UV_UDP_IPV6ONLY;
+    c3io::@check(uv::udp_bind(self.handle, addr.sockaddr(), flags), UDP_BIND_FAILED)!;
 }
 
 <*
- Send a UDP datagram to a specific address.
-
- @param ip : "Destination IP address"
- @param port : "Destination port"
- @param data : "Data to send"
- @param callback : "Completion callback"
- @param user_data : "User data passed to callback"
+ Associate the socket with one remote address. Afterwards it only exchanges
+ datagrams with that peer, and send/try_send take a null address.
 *>
-fn void UdpSocket.send(&self, String ip, int port, char[] data,
-                       SendCallback callback, void* user_data){
-    SendContext* ctx = alloc::new(self.allocator, SendContext);
-    ctx.socket = self;
+fn void? UdpSocket.connect(&self, SocketAddr addr)
+{
+    c3io::@check(uv::udp_connect(self.handle, addr.sockaddr()), UDP_CONNECT_FAILED)!;
+}
+
+<*
+ Remove the association made by connect().
+*>
+fn void? UdpSocket.disconnect(&self)
+{
+    c3io::@check(uv::udp_connect(self.handle, null), UDP_CONNECT_FAILED)!;
+}
+
+<*
+ Send a datagram immediately, without allocating or queuing. Fails with
+ UDP_WOULD_BLOCK if the kernel can't take it right now; the caller can drop
+ the packet or fall back to send().
+
+ @param to : "Destination, or null on a connected socket"
+ @param data : "Datagram contents"
+ @return "Number of bytes sent"
+*>
+fn sz? UdpSocket.try_send(&self, SocketAddr* to, char[] data)
+{
+    uv::Buf buf = { .base = data.ptr, .len = data.len };
+    int result = uv::udp_try_send(self.handle, &buf, 1, to ? to.sockaddr() : null);
+    if (result >= 0) return result;
+    c3io::set_last_status(result);
+    if (result == uv::UV_EAGAIN) return UDP_WOULD_BLOCK~;
+    return UDP_SEND_FAILED~;
+}
+
+<*
+ Queue a datagram. The data is copied, so the caller can reuse it at once.
+ Sends of up to SEND_POOL_CAPACITY bytes reuse pooled memory, so steady
+ traffic doesn't allocate. If the send can't be queued, it fails with a fault
+ and the callback isn't called.
+
+ @param to : "Destination, or null on a connected socket"
+ @param data : "Datagram contents"
+ @param callback : "Called when the send completes (optional)"
+ @param user_data : "Passed to the callback"
+*>
+fn void? UdpSocket.send(&self, SocketAddr* to, char[] data, SendCallback callback = null,
+                        void* user_data = null)
+{
+    SendContext* ctx = self.acquire_send(data.len);
     ctx.cb = callback;
     ctx.user_data = user_data;
+    if (data.len) mem::copy(ctx.data, data.ptr, data.len);
+    ctx.buf = { .base = ctx.data, .len = data.len };
 
-    // Allocate request
-    ctx.req = c3io::alloc_req(self.allocator, uv::UdpSend, uv::ReqType.UDP_SEND);
-    uv::req_set(ctx.req, ctx);
-
-    // Parse destination address
-    uv::Sockaddr_in addr;
-    int result;
-    @pool()
-    {
-        result = uv::ip4_addr(ip.zstr_tcopy(), port, &addr);
-    };
-    if (result != 0)
-    {
-        if (callback)
-        {
-            callback(self, result, user_data);
-        }
-        alloc::free(self.allocator, ctx.req);
-        alloc::free(self.allocator, ctx);
-        return;
-    }
-
-    // Prepare buffer (copy data so it stays valid until send completes)
-    ctx.bufs = alloc::new(self.allocator, uv::Buf);
-    char* data_copy = alloc::new_array(self.allocator, char, data.len);
-    mem::copy(data_copy, data.ptr, data.len);
-    ctx.bufs.base = data_copy;
-    ctx.bufs.len = data.len;
-
-    result = uv::udp_send(ctx.req, self.handle, ctx.bufs, 1,
-                          (uv::Sockaddr*)&addr, &on_send_internal);
-
+    int result = uv::udp_send(ctx.req, self.handle, &ctx.buf, 1, to ? to.sockaddr() : null,
+                              &on_send_internal);
     if (result < 0)
     {
-        // Immediate error
-        if (callback)
-        {
-            callback(self, result, user_data);
-        }
-        if (ctx.bufs != null)
-        {
-            alloc::free(self.allocator, ctx.bufs.base);  // Free the copied data
-            alloc::free(self.allocator, ctx.bufs);
-        }
-        alloc::free(self.allocator, ctx.req);
-        alloc::free(self.allocator, ctx);
+        self.release_send(ctx);
+        c3io::set_last_status(result);
+        return UDP_SEND_FAILED~;
     }
 }
 
 <*
- Send a UDP datagram to a sockaddr.
- Useful when you have a sockaddr from a previous recv.
+ Start receiving datagrams.
 
- @param addr : "Destination address"
- @param data : "Data to send"
- @param callback : "Completion callback"
- @param user_data : "User data passed to callback"
+ @param recv_cb : "Called for each datagram or receive error"
+ @param user_data : "Passed to the callbacks"
+ @param alloc_cb : "Supplies receive buffers (optional; default: one reused internal buffer)"
 *>
-fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
-                          SendCallback callback, void* user_data){
-    SendContext* ctx = alloc::new(self.allocator, SendContext);
-    ctx.socket = self;
-    ctx.cb = callback;
-    ctx.user_data = user_data;
-
-    // Allocate request
-    ctx.req = c3io::alloc_req(self.allocator, uv::UdpSend, uv::ReqType.UDP_SEND);
-    uv::req_set(ctx.req, ctx);
-
-    // Prepare buffer (copy data so it stays valid until send completes)
-    ctx.bufs = alloc::new(self.allocator, uv::Buf);
-    char* data_copy = alloc::new_array(self.allocator, char, data.len);
-    mem::copy(data_copy, data.ptr, data.len);
-    ctx.bufs.base = data_copy;
-    ctx.bufs.len = data.len;
-
-    int result = uv::udp_send(ctx.req, self.handle, ctx.bufs, 1,
-                              addr, &on_send_internal);
-
-    if (result < 0)
-    {
-        // Immediate error
-        if (callback)
-        {
-            callback(self, result, user_data);
-        }
-        if (ctx.bufs != null)
-        {
-            alloc::free(self.allocator, ctx.bufs.base);  // Free the copied data
-            alloc::free(self.allocator, ctx.bufs);
-        }
-        alloc::free(self.allocator, ctx.req);
-        alloc::free(self.allocator, ctx);
-    }
-}
-
-<*
- Start receiving UDP datagrams.
-
- @param alloc_cb : "Allocation callback (optional, can be null)"
- @param recv_cb : "Receive callback"
- @param user_data : "User data passed to callbacks"
-*>
-fn void? UdpSocket.recv_start(&self, AllocCallback alloc_cb, RecvCallback recv_cb,
-                             void* user_data){
-    self.alloc_cb = alloc_cb;
+fn void? UdpSocket.recv_start(&self, RecvCallback recv_cb, void* user_data = null,
+                              AllocCallback alloc_cb = null)
+{
     self.recv_cb = recv_cb;
+    self.alloc_cb = alloc_cb;
     self.recv_user_data = user_data;
-
-    int result = uv::udp_recv_start(self.handle, &on_alloc_internal, &on_recv_internal);
-    c3io::@check(result, UDP_RECV_FAILED)!;
+    c3io::@check(uv::udp_recv_start(self.handle, &on_alloc_internal, &on_recv_internal),
+                 UDP_RECV_FAILED)!;
 }
 
 <*
- Stop receiving UDP datagrams.
+ Stop receiving datagrams.
 *>
-fn void UdpSocket.recv_stop(&self){
-    uv::udp_recv_stop(self.handle);
+fn void? UdpSocket.recv_stop(&self)
+{
+    c3io::@check(uv::udp_recv_stop(self.handle), UDP_RECV_FAILED)!;
 }
 
 <*
- Close the UDP socket and free resources.
- Note: This is async - the socket and handle will be freed when the close completes.
+ Allow or forbid sending to broadcast addresses, e.g. for LAN discovery.
 *>
-fn void UdpSocket.close(&self){
-    // Stop receiving first
-    uv::udp_recv_stop(self.handle);
+fn void? UdpSocket.set_broadcast(&self, bool enable)
+{
+    c3io::@check(uv::udp_set_broadcast(self.handle, enable ? 1 : 0), UDP_OPTION_FAILED)!;
+}
 
-    // Close handle (async operation that will free both handle and socket via callback)
+<*
+ Set the kernel send buffer size in bytes. The system may round or double it.
+*>
+fn void? UdpSocket.set_send_buffer_size(&self, int bytes)
+{
+    c3io::@check(uv::send_buffer_size(self.handle, &bytes), UDP_OPTION_FAILED)!;
+}
+
+<*
+ Set the kernel receive buffer size in bytes. The system may round or double it.
+*>
+fn void? UdpSocket.set_recv_buffer_size(&self, int bytes)
+{
+    c3io::@check(uv::recv_buffer_size(self.handle, &bytes), UDP_OPTION_FAILED)!;
+}
+
+<*
+ The kernel send buffer size in bytes.
+*>
+fn int? UdpSocket.send_buffer_size(&self)
+{
+    int bytes = 0;
+    c3io::@check(uv::send_buffer_size(self.handle, &bytes), UDP_OPTION_FAILED)!;
+    return bytes;
+}
+
+<*
+ The kernel receive buffer size in bytes.
+*>
+fn int? UdpSocket.recv_buffer_size(&self)
+{
+    int bytes = 0;
+    c3io::@check(uv::recv_buffer_size(self.handle, &bytes), UDP_OPTION_FAILED)!;
+    return bytes;
+}
+
+<*
+ The local address the socket is bound to.
+*>
+fn SocketAddr? UdpSocket.local_addr(&self)
+{
+    SocketAddr addr;
+    int len = SocketAddr::size;
+    c3io::@check(uv::udp_getsockname(self.handle, addr.sockaddr(), &len), UDP_OPTION_FAILED)!;
+    return addr;
+}
+
+<*
+ The remote address of a connected socket.
+*>
+fn SocketAddr? UdpSocket.peer_addr(&self)
+{
+    SocketAddr addr;
+    int len = SocketAddr::size;
+    c3io::@check(uv::udp_getpeername(self.handle, addr.sockaddr(), &len), UDP_OPTION_FAILED)!;
+    return addr;
+}
+
+<*
+ Close the socket. Queued sends complete with UV_ECANCELED, then the socket
+ is freed. Don't use the socket after calling this.
+*>
+fn void UdpSocket.close(&self)
+{
+    uv::udp_recv_stop(self.handle);
     uv::close((uv::Handle*)self.handle, &on_close_internal);
-    // Note: Both handle and socket will be freed by the callback
 }

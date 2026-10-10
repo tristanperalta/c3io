@@ -1,450 +1,358 @@
 module c3io::udp::test;
 
+import c3io;
 import c3io::udp;
+import c3io::net;
 import c3io::event_loop;
 import c3io::uv;
-import std::io;
 
-// Test result tracking
-struct TestContext
+// Receiver state shared by most tests.
+struct Inbox
 {
-    bool success;
-    bool completed;
-    int send_count;
-    int recv_count;
-    event_loop::EventLoop* loop;
-    c3io::udp::UdpSocket* sender;
-    c3io::udp::UdpSocket* receiver;
-    char[] received_data;
-    uv::Sockaddr* sender_addr;
+    int count;
+    int last_status;
+    char[64] last_data;
+    usz last_len;
+    bool truncated;
+    SocketAddr from;
+    void* last_ptr;
 }
 
-// ============================================================================
-// Create/Close Tests
-// ============================================================================
+fn void on_recv(UdpSocket* socket, int status, char[] data, SocketAddr* from, bool truncated,
+                void* user_data)
+{
+    Inbox* inbox = user_data;
+    inbox.count++;
+    inbox.last_status = status;
+    inbox.truncated = truncated;
+    inbox.last_ptr = data.ptr;
+    inbox.last_len = data.len;
+    if (data.len) inbox.last_data[:data.len] = data[..];
+    if (from) inbox.from = *from;
+}
+
+<*
+ Bind a socket to an ephemeral loopback port and return the address it got.
+*>
+fn SocketAddr bind_loopback(UdpSocket* socket, String ip = "127.0.0.1")
+{
+    socket.bind(net::addr(ip, 0)!!)!!;
+    return socket.local_addr()!!;
+}
+
+macro void @pump(EventLoop* loop, #done, int max_iterations = 200)
+{
+    for (int i = 0; i < max_iterations && !#done; i++) loop.run_once();
+}
+
+macro void @drain(EventLoop* loop)
+{
+    while (loop.is_alive()) loop.run_once();
+}
 
 fn void test_create_close_socket() @test
 {
-    EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-    EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
-
-    // Create UDP socket
-    c3io::udp::UdpSocket*? socket_opt = c3io::udp::create(&loop);
-    if (catch err = socket_opt)
-    {
-        assert(false, "Should create UDP socket");
-    }
-    c3io::udp::UdpSocket* socket = socket_opt;
-
-    // Close socket
+    UdpSocket* socket = udp::create(&loop)!!;
     socket.close();
-
-    // Run loop until close completes
-    while (loop.is_alive())
-    {
-        loop.run_once();
-    }
+    @drain(&loop);
 }
 
-// ============================================================================
-// Bind Tests
-// ============================================================================
-
-fn void test_bind_socket() @test
+fn void test_bind_reports_local_address() @test
 {
-    EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-    EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
-
-    c3io::udp::UdpSocket*? socket_opt = c3io::udp::create(&loop);
-    if (catch err = socket_opt)
-    {
-        assert(false, "Should create UDP socket");
-    }
-    c3io::udp::UdpSocket* socket = socket_opt;
-
-    // Bind to any address on a random port (0 = let OS choose)
-    socket.bind("0.0.0.0", 0)!!;
-
-    // Close socket
+    UdpSocket* socket = udp::create(&loop)!!;
+    SocketAddr local = bind_loopback(socket);
+    assert(local.is_ipv4());
+    assert(local.port() != 0, "System should assign a port");
     socket.close();
-
-    // Run loop until close completes
-    while (loop.is_alive())
-    {
-        loop.run_once();
-    }
+    @drain(&loop);
 }
 
-// ============================================================================
-// Send/Receive Tests
-// ============================================================================
-
-fn void on_recv_echo(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
+fn void on_sent(UdpSocket* socket, int status, void* user_data)
 {
-    TestContext* ctx = (TestContext*)user_data;
-
-    if (data.len > 0)
-    {
-        ctx.recv_count++;
-
-        // Copy received data for verification
-        ctx.received_data = mem::new_array(char, data.len);
-        for (usz i = 0; i < data.len; i++)
-        {
-            ctx.received_data[i] = data[i];
-        }
-
-        // Verify data
-        String expected = "Hello UDP!";
-        if (data.len == expected.len)
-        {
-            bool matches = true;
-            for (usz i = 0; i < data.len; i++)
-            {
-                if (data[i] != expected[i])
-                {
-                    matches = false;
-                    break;
-                }
-            }
-            if (matches)
-            {
-                ctx.success = true;
-                ctx.completed = true;
-            }
-        }
-    }
-}
-
-fn char[] on_alloc_default(c3io::udp::UdpSocket* socket, usz suggested_size, void* user_data)
-{
-    return mem::new_array(char, (sz)suggested_size);
-}
-
-fn void on_send_complete(c3io::udp::UdpSocket* socket, int status, void* user_data)
-{
-    TestContext* ctx = (TestContext*)user_data;
-    ctx.send_count++;
-
-    if (status < 0)
-    {
-        io::printfn("Send failed: %s", (ZString)uv::strerror(status));
-        ctx.success = false;
-        ctx.completed = true;
-    }
+    int* sent = user_data;
+    if (status == 0) (*sent)++;
 }
 
 fn void test_send_receive() @test
 {
-    EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-    EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
 
-    TestContext ctx;
-    ctx.success = false;
-    ctx.completed = false;
-    ctx.send_count = 0;
-    ctx.recv_count = 0;
-    ctx.loop = &loop;
-    ctx.received_data = {};
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox)!!;
 
-    // Create receiver socket
-    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
-    if (catch err = receiver_opt)
-    {
-        assert(false, "Should create receiver socket");
-    }
-    c3io::udp::UdpSocket* receiver = receiver_opt;
-    ctx.receiver = receiver;
+    UdpSocket* sender = udp::create(&loop)!!;
+    SocketAddr sender_addr = bind_loopback(sender);
+    int sent;
+    sender.send(&receiver_addr, "Hello UDP!", &on_sent, &sent)!!;
 
-    // Bind receiver to localhost on port 9001
-    receiver.bind("127.0.0.1", 9001)!!;
+    @pump(&loop, inbox.count == 1 && sent == 1);
+    assert(sent == 1, "Send callback should report success");
+    assert(inbox.count == 1);
+    assert(inbox.last_status == 0);
+    assert((String)inbox.last_data[:inbox.last_len] == "Hello UDP!");
+    assert(inbox.from == sender_addr, "Sender address should be reported");
+    assert(!inbox.truncated);
 
-    // Start receiving
-    receiver.recv_start(&on_alloc_default, &on_recv_echo, &ctx)!!;
-
-    // Create sender socket
-    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
-    if (catch err = sender_opt)
-    {
-        assert(false, "Should create sender socket");
-    }
-    c3io::udp::UdpSocket* sender = sender_opt;
-    ctx.sender = sender;
-
-    // Send datagram to receiver
-    String test_data = "Hello UDP!";
-    sender.send("127.0.0.1", 9001, (char[])test_data, &on_send_complete, &ctx);
-
-    // Run event loop until we receive the datagram
-    int max_iterations = 100;
-    int iterations = 0;
-    while (!ctx.completed && iterations < max_iterations)
-    {
-        loop.run_once();
-        iterations++;
-    }
-
-    assert(ctx.success, "Should receive datagram");
-    assert(ctx.send_count == 1, "Should send once");
-    assert(ctx.recv_count == 1, "Should receive once");
-
-    // Clean up
-    if (ctx.received_data.len > 0)
-    {
-        free(ctx.received_data);
-    }
     sender.close();
     receiver.close();
-
-    // Run loop until close completes
-    while (loop.is_alive())
-    {
-        loop.run_once();
-    }
-}
-
-// ============================================================================
-// Multiple Datagrams Test
-// ============================================================================
-
-struct MultiContext
-{
-    int messages_to_send;
-    int sent;
-    int received;
-    bool completed;
-    event_loop::EventLoop* loop;
-}
-
-fn void on_recv_multi(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
-{
-    MultiContext* ctx = (MultiContext*)user_data;
-
-    if (data.len > 0)
-    {
-        ctx.received++;
-
-        if (ctx.received >= ctx.messages_to_send)
-        {
-            ctx.completed = true;
-        }
-    }
-}
-
-fn void on_send_multi(c3io::udp::UdpSocket* socket, int status, void* user_data)
-{
-    MultiContext* ctx = (MultiContext*)user_data;
-
-    if (status == 0)
-    {
-        ctx.sent++;
-    }
+    @drain(&loop);
 }
 
 fn void test_multiple_datagrams() @test
 {
-    EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-    EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
 
-    MultiContext ctx;
-    ctx.messages_to_send = 5;
-    ctx.sent = 0;
-    ctx.received = 0;
-    ctx.completed = false;
-    ctx.loop = &loop;
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox)!!;
 
-    // Create receiver
-    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
-    if (catch err = receiver_opt)
-    {
-        assert(false, "Should create receiver socket");
-    }
-    c3io::udp::UdpSocket* receiver = receiver_opt;
+    UdpSocket* sender = udp::create(&loop)!!;
+    int sent;
+    for (int i = 0; i < 5; i++) sender.send(&receiver_addr, "Message", &on_sent, &sent)!!;
 
-    receiver.bind("127.0.0.1", 9002)!!;
-    receiver.recv_start(&on_alloc_default, &on_recv_multi, &ctx)!!;
+    @pump(&loop, inbox.count == 5 && sent == 5);
+    assert(sent == 5);
+    assert(inbox.count == 5);
 
-    // Create sender
-    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
-    if (catch err = sender_opt)
-    {
-        assert(false, "Should create sender socket");
-    }
-    c3io::udp::UdpSocket* sender = sender_opt;
-
-    // Send multiple datagrams
-    for (int i = 0; i < ctx.messages_to_send; i++)
-    {
-        String msg = "Message";
-        sender.send("127.0.0.1", 9002, (char[])msg, &on_send_multi, &ctx);
-    }
-
-    // Run event loop until all messages received
-    int max_iterations = 200;
-    int iterations = 0;
-    while (!ctx.completed && iterations < max_iterations)
-    {
-        loop.run_once();
-        iterations++;
-    }
-
-    assert(ctx.sent == ctx.messages_to_send, "Should send all messages");
-    assert(ctx.received == ctx.messages_to_send, "Should receive all messages");
-
-    // Clean up
     sender.close();
     receiver.close();
+    @drain(&loop);
+}
 
-    while (loop.is_alive())
+struct EchoState
+{
+    Inbox inbox;
+    bool replied;
+}
+
+fn void on_recv_echo(UdpSocket* socket, int status, char[] data, SocketAddr* from, bool truncated,
+                     void* user_data)
+{
+    EchoState* state = user_data;
+    if (status == 0 && !state.replied)
     {
-        loop.run_once();
+        state.replied = true;
+        socket.send(from, "Reply")!!;
     }
 }
 
-// ============================================================================
-// Send To (with sockaddr) Test
-// ============================================================================
-
-struct SendToContext
+fn void test_reply_to_sender_address() @test
 {
-    bool send_completed;
-    bool recv_completed;
-    uv::Sockaddr* sender_addr;
-    event_loop::EventLoop* loop;
-}
-
-fn void on_recv_capture_addr(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
-{
-    SendToContext* ctx = (SendToContext*)user_data;
-
-    if (data.len > 0 && !ctx.recv_completed)
-    {
-        ctx.recv_completed = true;
-
-        // Save sender address for reply
-        if (addr)
-        {
-            ctx.sender_addr = mem::new(uv::Sockaddr);
-            *ctx.sender_addr = *addr;
-
-            // Send reply back to sender
-            String reply = "Reply";
-            socket.send_to(ctx.sender_addr, (char[])reply, null, null);
-        }
-    }
-}
-
-fn void on_recv_reply(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
-{
-    SendToContext* ctx = (SendToContext*)user_data;
-
-    if (data.len > 0)
-    {
-        // Verify we got the reply
-        String expected = "Reply";
-        if (data.len == expected.len)
-        {
-            bool matches = true;
-            for (usz i = 0; i < data.len; i++)
-            {
-                if (data[i] != expected[i])
-                {
-                    matches = false;
-                    break;
-                }
-            }
-            if (matches)
-            {
-                ctx.send_completed = true;
-            }
-        }
-    }
-}
-
-fn void test_send_to_addr() @test
-{
-    EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-    EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
 
-    SendToContext ctx;
-    ctx.send_completed = false;
-    ctx.recv_completed = false;
-    ctx.sender_addr = null;
-    ctx.loop = &loop;
+    UdpSocket* server = udp::create(&loop)!!;
+    SocketAddr server_addr = bind_loopback(server);
+    EchoState state;
+    server.recv_start(&on_recv_echo, &state)!!;
 
-    // Create receiver (will reply to sender)
-    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
-    if (catch err = receiver_opt)
-    {
-        assert(false, "Should create receiver socket");
-    }
-    c3io::udp::UdpSocket* receiver = receiver_opt;
+    UdpSocket* client = udp::create(&loop)!!;
+    bind_loopback(client);
+    Inbox replies;
+    client.recv_start(&on_recv, &replies)!!;
+    client.send(&server_addr, "Hello")!!;
 
-    receiver.bind("127.0.0.1", 9003)!!;
-    receiver.recv_start(&on_alloc_default, &on_recv_capture_addr, &ctx)!!;
+    @pump(&loop, replies.count == 1);
+    assert(state.replied);
+    assert((String)replies.last_data[:replies.last_len] == "Reply");
+    assert(replies.from == server_addr);
 
-    // Create sender (will receive reply)
-    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
-    if (catch err = sender_opt)
-    {
-        assert(false, "Should create sender socket");
-    }
-    c3io::udp::UdpSocket* sender = sender_opt;
+    client.close();
+    server.close();
+    @drain(&loop);
+}
 
-    sender.bind("127.0.0.1", 9004)!!;
-    sender.recv_start(&on_alloc_default, &on_recv_reply, &ctx)!!;
+fn void test_try_send() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
 
-    // Send initial message
-    String initial = "Hello";
-    sender.send("127.0.0.1", 9003, (char[])initial, null, null);
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox)!!;
 
-    // Run event loop until reply received
-    int max_iterations = 200;
-    int iterations = 0;
-    while (!ctx.send_completed && iterations < max_iterations)
-    {
-        loop.run_once();
-        iterations++;
-    }
+    UdpSocket* sender = udp::create(&loop)!!;
+    sz sent = sender.try_send(&receiver_addr, "fast path")!!;
+    assert(sent == 9);
 
-    assert(ctx.recv_completed, "Should receive initial message");
-    assert(ctx.send_completed, "Should receive reply");
+    @pump(&loop, inbox.count == 1);
+    assert((String)inbox.last_data[:inbox.last_len] == "fast path");
 
-    // Clean up
-    if (ctx.sender_addr)
-    {
-        free(ctx.sender_addr);
-    }
     sender.close();
     receiver.close();
+    @drain(&loop);
+}
 
-    while (loop.is_alive())
+fn void test_connected_socket() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* server = udp::create(&loop)!!;
+    SocketAddr server_addr = bind_loopback(server);
+    Inbox inbox;
+    server.recv_start(&on_recv, &inbox)!!;
+
+    UdpSocket* client = udp::create(&loop)!!;
+    client.connect(server_addr)!!;
+    assert(client.peer_addr()!! == server_addr);
+    client.try_send(null, "connected")!!;
+    client.send(null, "queued")!!;
+
+    @pump(&loop, inbox.count == 2);
+    assert(inbox.count == 2);
+
+    client.disconnect()!!;
+    if (try client.peer_addr()) assert(false, "Disconnected socket has no peer");
+
+    client.close();
+    server.close();
+    @drain(&loop);
+}
+
+fn void test_empty_datagram() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    inbox.last_status = -1;
+    receiver.recv_start(&on_recv, &inbox)!!;
+
+    UdpSocket* sender = udp::create(&loop)!!;
+    sender.send(&receiver_addr, "")!!;
+
+    @pump(&loop, inbox.count == 1);
+    assert(inbox.count == 1, "An empty datagram is still delivered");
+    assert(inbox.last_status == 0);
+    assert(inbox.last_len == 0);
+
+    sender.close();
+    receiver.close();
+    @drain(&loop);
+}
+
+// A buffer the test owns. If c3io freed it, ASan would report an invalid free.
+char[8] static_buffer;
+
+fn char[] alloc_static(UdpSocket* socket, usz suggested_size, void* user_data)
+{
+    return &static_buffer;
+}
+
+fn void test_caller_buffer_is_not_freed_and_truncation_is_reported() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox, &alloc_static)!!;
+
+    UdpSocket* sender = udp::create(&loop)!!;
+    sender.send(&receiver_addr, "1234")!!;
+    sender.send(&receiver_addr, "longer than eight bytes")!!;
+
+    @pump(&loop, inbox.count == 2);
+    assert(inbox.count == 2);
+    assert(inbox.last_ptr == &static_buffer, "Data should be in the caller's buffer");
+    assert(inbox.truncated, "Oversized datagram should be reported as truncated");
+    assert(inbox.last_len == 8);
+
+    sender.close();
+    receiver.close();
+    @drain(&loop);
+}
+
+fn void test_sends_reuse_pooled_memory() @test
+{
+    TrackingAllocator tracker;
+    tracker.init(mem);
+    defer tracker.free();
+
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* receiver = udp::create(&loop)!!;
+    SocketAddr receiver_addr = bind_loopback(receiver);
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox)!!;
+
+    UdpSocket* sender = udp::create(&loop, &tracker)!!;
+    int sent;
+    for (int batch = 0; batch < 100; batch++)
     {
-        loop.run_once();
+        for (int i = 0; i < 10; i++) sender.send(&receiver_addr, "tick", &on_sent, &sent)!!;
+        @pump(&loop, sent == (batch + 1) * 10);
     }
+    assert(sent == 1000);
+    assert(tracker.total_allocation_count() <= 2 + udp::SEND_POOL_MAX,
+           "Sends should reuse pooled contexts, got %d allocations", tracker.total_allocation_count());
+
+    sender.close();
+    receiver.close();
+    @drain(&loop);
+    assert(tracker.allocation_count() == 0, "Pool should be freed on close");
+}
+
+fn void test_socket_options() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* socket = udp::create(&loop)!!;
+    bind_loopback(socket);
+    socket.set_broadcast(true)!!;
+    socket.set_broadcast(false)!!;
+    socket.set_send_buffer_size(64 * 1024)!!;
+    socket.set_recv_buffer_size(64 * 1024)!!;
+    assert(socket.send_buffer_size()!! >= 64 * 1024);
+    assert(socket.recv_buffer_size()!! >= 64 * 1024);
+
+    socket.close();
+    @drain(&loop);
+}
+
+fn void test_ipv6_send_receive() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    UdpSocket* receiver = udp::create(&loop)!!;
+    if (catch receiver.bind(net::addr("::1", 0)!!))
+    {
+        // No IPv6 loopback on this machine.
+        receiver.close();
+        @drain(&loop);
+        return;
+    }
+    SocketAddr receiver_addr = receiver.local_addr()!!;
+    assert(receiver_addr.is_ipv6());
+    Inbox inbox;
+    receiver.recv_start(&on_recv, &inbox)!!;
+
+    UdpSocket* sender = udp::create(&loop)!!;
+    SocketAddr sender_addr = bind_loopback(sender, "::1");
+    sender.try_send(&receiver_addr, "over v6")!!;
+
+    @pump(&loop, inbox.count == 1);
+    assert((String)inbox.last_data[:inbox.last_len] == "over v6");
+    assert(inbox.from == sender_addr);
+
+    sender.close();
+    receiver.close();
+    @drain(&loop);
 }

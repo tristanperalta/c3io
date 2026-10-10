@@ -5,6 +5,7 @@ import c3io::udp;
 import c3io::tcp;
 import c3io::file;
 import c3io::uv;
+import c3io::net;
 
 // Copy `text` into a buffer with no null terminator and return the first
 // `len` bytes as a String, so the byte after the slice is part of the text.
@@ -24,7 +25,7 @@ fn void test_udp_bind_with_sliced_ip() @test
     UdpSocket* socket = udp::create(&loop)!!;
     String ip = unterminated_slice("127.0.0.1:7777", 9);
     defer free(ip.ptr);
-    socket.bind(ip, 0)!!;
+    socket.bind(net::addr(ip, 0)!!)!!;
     socket.close();
     while (loop.is_alive()) loop.run_once();
 }

@@ -397,6 +397,25 @@ extern fn ulong hrtime() @cname("uv_hrtime");
 extern fn usz handle_size(HandleType type) @cname("uv_handle_size");
 
 <*
+ Get or set the size of the socket's send buffer. If *value is 0 the current
+ size is stored in it; otherwise the size is set to *value.
+
+ @param handle : "TCP or UDP handle"
+ @param value : "In: new size or 0; Out: current size"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int send_buffer_size(Handle* handle, int* value) @cname("uv_send_buffer_size");
+
+<*
+ Get or set the size of the socket's receive buffer, like send_buffer_size.
+
+ @param handle : "TCP or UDP handle"
+ @param value : "In: new size or 0; Out: current size"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int recv_buffer_size(Handle* handle, int* value) @cname("uv_recv_buffer_size");
+
+<*
  Close a handle.
  Must be called on each handle before freeing.
 
@@ -529,6 +548,16 @@ macro void* req_get($Type, req)
 {
 	return ($Type*)uv::req_get_data((uv::Req*)req);
 }
+
+<*
+ Cancel a pending fs, work, getaddrinfo, getnameinfo or random request.
+ Only a request that hasn't started running on the thread pool can be
+ cancelled; its callback then runs with UV_ECANCELED.
+
+ @param req : "Request to cancel"
+ @return "0 on success, UV_EBUSY if the request is running or done"
+*>
+extern fn int cancel(Req* req) @cname("uv_cancel");
 
 <*
  Set user data associated with a request (internal).
@@ -669,6 +698,16 @@ extern fn int read_stop(Stream* stream) @cname("uv_read_stop");
 extern fn int write(Write* req, Stream* stream, Buf* bufs, uint nbufs, WriteCb cb) @cname("uv_write");
 
 <*
+ Write data to a stream immediately, without queuing a request.
+
+ @param stream : "Stream to write to"
+ @param bufs : "Array of buffers to write"
+ @param nbufs : "Number of buffers"
+ @return "Number of bytes written, UV_EAGAIN if nothing could be written, or a negative error code"
+*>
+extern fn int try_write(Stream* stream, Buf* bufs, uint nbufs) @cname("uv_try_write");
+
+<*
  Shutdown the write side of a stream.
 
  @param req : "Shutdown request"
@@ -756,6 +795,9 @@ const int UV_ECONNREFUSED = env::WIN32 ? -4078 : (env::DARWIN ? -61 : -111);
 const int UV_ETIMEDOUT    = env::WIN32 ? -4039 : (env::DARWIN ? -60 : -110);
 const int UV_ENOTCONN     = env::WIN32 ? -4053 : (env::DARWIN ? -57 : -107);
 const int UV_ECONNRESET   = env::WIN32 ? -4077 : (env::DARWIN ? -54 : -104);
+const int UV_EAGAIN       = env::WIN32 ? -4088 : (env::DARWIN ? -35 : -11);
+const int UV_EBUSY        = env::WIN32 ? -4082 : -16;
+const int UV_ECANCELED    = env::WIN32 ? -4081 : (env::DARWIN ? -89 : -125);
 
 // ============================================================================
 // Socket Constants
@@ -1003,7 +1045,38 @@ extern fn int udp_getsockname(Udp* udp, Sockaddr* name, int* namelen) @cname("uv
 *>
 extern fn int udp_try_send(Udp* udp, Buf* bufs, uint nbufs, Sockaddr* addr) @cname("uv_udp_try_send");
 
+<*
+ Associate a UDP handle with a remote address, or remove the association
+ when addr is null. Afterwards send/try_send must pass a null address.
+
+ @param udp : "UDP handle"
+ @param addr : "Remote address, or null to disconnect"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int udp_connect(Udp* udp, Sockaddr* addr) @cname("uv_udp_connect");
+
+<*
+ Get the remote address of a connected UDP handle.
+
+ @param udp : "UDP handle"
+ @param name : "Output sockaddr structure"
+ @param namelen : "Input: buffer size, Output: actual size"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int udp_getpeername(Udp* udp, Sockaddr* name, int* namelen) @cname("uv_udp_getpeername");
+
+<*
+ Enable or disable sending to broadcast addresses.
+
+ @param udp : "UDP handle"
+ @param on : "1 to enable, 0 to disable"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int udp_set_broadcast(Udp* udp, int on) @cname("uv_udp_set_broadcast");
+
 // UDP flags
+const uint UV_UDP_IPV6ONLY = 1;   // Bind to IPv6 only, without dual-stack IPv4
+const uint UV_UDP_PARTIAL = 2;    // Received datagram was truncated
 const uint UV_UDP_REUSEADDR = 4;  // Allow reusing addresses
 
 // ============================================================================

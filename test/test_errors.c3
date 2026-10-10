@@ -3,6 +3,7 @@ module c3io::errors_test;
 import c3io;
 import c3io::event_loop;
 import c3io::udp;
+import c3io::net;
 
 fn void test_failed_call_records_status() @test
 {
@@ -10,7 +11,9 @@ fn void test_failed_call_records_status() @test
     defer loop.free();
 
     UdpSocket* socket = udp::create(&loop)!!;
-    if (catch err = socket.bind("not-an-ip", 0))
+    socket.bind(net::addr("127.0.0.1", 0)!!)!!;
+    // Binding a socket twice fails in libuv with EINVAL.
+    if (catch err = socket.bind(net::addr("127.0.0.1", 0)!!))
     {
         assert(err == udp::UDP_BIND_FAILED);
         assert(c3io::last_status() < 0);
@@ -19,7 +22,7 @@ fn void test_failed_call_records_status() @test
     }
     else
     {
-        assert(false, "Binding an invalid address should fail");
+        assert(false, "Binding twice should fail");
     }
 
     socket.close();

@@ -77,61 +77,8 @@ struct UdpSocket
     RecvCallback recv_cb;
     AllocCallback alloc_cb;
     void* recv_user_data;
-    char[] recv_buffer;       // Reused for every receive when alloc_cb is null
-    SendContext* send_pool;   // Free send contexts with SEND_POOL_CAPACITY bytes of room
-    int send_pool_count;
-}
-
-<*
- A queued send. One allocation holds this struct, the uv request and a copy
- of the data, in that order.
-*>
-struct SendContext
-{
-    SendContext* next_free;
-    UdpSocket* socket;
-    SendCallback cb;
-    void* user_data;
-    usz capacity;
-    uv::UdpSend* req;
-    char* data;
-    uv::Buf buf;
-}
-
-macro usz align16(usz n) @private => (n + 15) & ~(usz)15;
-
-fn SendContext* UdpSocket.acquire_send(&self, usz len)
-{
-    if (len <= SEND_POOL_CAPACITY && self.send_pool)
-    {
-        SendContext* ctx = self.send_pool;
-        self.send_pool = ctx.next_free;
-        self.send_pool_count--;
-        return ctx;
-    }
-    usz capacity = len <= SEND_POOL_CAPACITY ? SEND_POOL_CAPACITY : len;
-    usz req_offset = align16(SendContext::size);
-    usz data_offset = req_offset + align16(uv::req_size(uv::ReqType.UDP_SEND));
-    char* block = alloc::calloc(self.allocator, (sz)(data_offset + capacity));
-    SendContext* ctx = (SendContext*)block;
-    ctx.socket = self;
-    ctx.capacity = capacity;
-    ctx.req = (uv::UdpSend*)(block + req_offset);
-    ctx.data = block + data_offset;
-    uv::req_set(ctx.req, ctx);
-    return ctx;
-}
-
-fn void UdpSocket.release_send(&self, SendContext* ctx)
-{
-    if (ctx.capacity == SEND_POOL_CAPACITY && self.send_pool_count < SEND_POOL_MAX)
-    {
-        ctx.next_free = self.send_pool;
-        self.send_pool = ctx;
-        self.send_pool_count++;
-        return;
-    }
-    alloc::free(self.allocator, ctx);
+    char[] recv_buffer;  // Reused for every receive when alloc_cb is null
+    RequestPool sends;
 }
 
 fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf) @private
@@ -175,22 +122,18 @@ fn void on_recv_internal(uv::Udp* handle, sz nread, uv::Buf* buf, uv::Sockaddr* 
 
 fn void on_send_internal(uv::UdpSend* req, int status) @private
 {
-    SendContext* ctx = uv::req_get(SendContext, req);
-    UdpSocket* socket = ctx.socket;
-    if (ctx.cb) ctx.cb(socket, status, ctx.user_data);
-    socket.release_send(ctx);
+    PooledRequest* r = uv::req_get(PooledRequest, req);
+    UdpSocket* socket = r.owner;
+    SendCallback callback = (SendCallback)r.callback;
+    if (callback) callback(socket, status, r.user_data);
+    socket.sends.release(r);
 }
 
 fn void on_close_internal(uv::Handle* handle) @private
 {
     UdpSocket* socket = uv::handle_get(UdpSocket, handle);
     Allocator allocator = socket.allocator;
-    while (socket.send_pool)
-    {
-        SendContext* next = socket.send_pool.next_free;
-        alloc::free(allocator, socket.send_pool);
-        socket.send_pool = next;
-    }
+    socket.sends.free();
     if (socket.recv_buffer.ptr) alloc::free(allocator, socket.recv_buffer.ptr);
     alloc::free(allocator, handle);
     alloc::free(allocator, socket);
@@ -220,6 +163,7 @@ fn UdpSocket*? create(event_loop::EventLoop* loop, Allocator allocator = null)
     socket.allocator = allocator;
     socket.handle = handle;
     socket.loop = loop;
+    socket.sends.init(allocator, uv::ReqType.UDP_SEND, SEND_POOL_CAPACITY, SEND_POOL_MAX);
     uv::handle_set(handle, socket);
     return socket;
 }
@@ -289,17 +233,16 @@ fn sz? UdpSocket.try_send(&self, SocketAddr* to, char[] data)
 fn void? UdpSocket.send(&self, SocketAddr* to, char[] data, SendCallback callback = null,
                         void* user_data = null)
 {
-    SendContext* ctx = self.acquire_send(data.len);
-    ctx.cb = callback;
-    ctx.user_data = user_data;
-    if (data.len) mem::copy(ctx.data, data.ptr, data.len);
-    ctx.buf = { .base = ctx.data, .len = data.len };
+    PooledRequest* r = self.sends.acquire(data);
+    r.owner = self;
+    r.callback = (void*)callback;
+    r.user_data = user_data;
 
-    int result = uv::udp_send(ctx.req, self.handle, &ctx.buf, 1, to ? to.sockaddr() : null,
+    int result = uv::udp_send(r.req, self.handle, &r.buf, 1, to ? to.sockaddr() : null,
                               &on_send_internal);
     if (result < 0)
     {
-        self.release_send(ctx);
+        self.sends.release(r);
         c3io::set_last_status(result);
         return UDP_SEND_FAILED~;
     }

@@ -1,254 +1,339 @@
 module c3io::tcp_test;
 
+import c3io;
 import c3io::event_loop;
 import c3io::tcp;
-import std::io;
+import c3io::net;
+import c3io::uv;
+
+macro void @pump(EventLoop* loop, #done, int max_iterations = 500)
+{
+    for (int i = 0; i < max_iterations && !#done; i++) loop.run_once();
+}
+
+macro void @drain(EventLoop* loop)
+{
+    while (loop.is_alive()) loop.run_once();
+}
 
 <*
- Test TCP connection creation and cleanup.
+ Server side of a test: accepts one client and optionally reads from it.
 *>
+struct Server
+{
+    TcpConnection* listener;
+    TcpConnection* client;
+    int accept_status;
+    bool accepted;
+    bool read_client;      // Start reading on the accepted client
+    char[64] received;
+    usz received_len;
+    String reply;          // Written back when data arrives, if set
+}
+
+fn void on_server_read(TcpConnection* conn, int status, char[] data, void* user_data)
+{
+    Server* server = user_data;
+    if (status != 0) return;
+    usz n = data.len;
+    if (server.received_len + n > server.received.len) n = server.received.len - server.received_len;
+    server.received[server.received_len:n] = data[:n];
+    server.received_len += n;
+    if (server.reply.len) conn.try_write(server.reply)!!;
+}
+
+fn void on_accept(TcpConnection* listener, int status, TcpConnection* client, void* user_data)
+{
+    Server* server = user_data;
+    server.accepted = true;
+    server.accept_status = status;
+    server.client = client;
+    if (client && server.read_client) client.read_start(&on_server_read, server)!!;
+}
+
+fn SocketAddr start_server(EventLoop* loop, Server* server, String ip = "127.0.0.1")
+{
+    server.listener = tcp::create(loop)!!;
+    server.listener.bind(net::addr(ip, 0)!!)!!;
+    server.listener.listen(16, &on_accept, server)!!;
+    return server.listener.local_addr()!!;
+}
+
+fn void Server.close(&self)
+{
+    if (self.client) self.client.close();
+    self.listener.close();
+}
+
+<*
+ Client side of a test.
+*>
+struct Client
+{
+    TcpConnection* conn;
+    bool connected;
+    int connect_status;
+    int read_status;       // Status of the last read callback
+    int reads;
+    char[64] received;
+    usz received_len;
+    void* last_ptr;
+    bool eof;
+}
+
+fn void on_client_read(TcpConnection* conn, int status, char[] data, void* user_data)
+{
+    Client* client = user_data;
+    client.reads++;
+    client.read_status = status;
+    client.last_ptr = data.ptr;
+    if (status == uv::UV_EOF) client.eof = true;
+    if (status == 0)
+    {
+        usz n = data.len;
+        if (client.received_len + n > client.received.len) n = client.received.len - client.received_len;
+        client.received[client.received_len:n] = data[:n];
+        client.received_len += n;
+    }
+}
+
+fn void on_connect(TcpConnection* conn, int status, void* user_data)
+{
+    Client* client = user_data;
+    client.connected = true;
+    client.connect_status = status;
+    if (status == 0) conn.read_start(&on_client_read, client)!!;
+}
+
 fn void test_tcp_create_and_close() @test
 {
-    event_loop::EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-
-    event_loop::EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
-
-    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::create(&loop);
-    if (catch err = conn_opt)
-    {
-        assert(false, "Should create TCP connection");
-    }
-
-    c3io::tcp::TcpConnection* conn = conn_opt;
-
+    TcpConnection* conn = tcp::create(&loop)!!;
     conn.close();
-    // Note: close() frees the connection automatically, but it's async
-    // Run the event loop to process the close callback
-    (void)loop.run();
-
-    assert(true, "TCP connection created and closed successfully");
+    @drain(&loop);
 }
 
-<*
- Shared state for the loopback connect/accept test.
-*>
-struct LoopbackState
+fn void test_tcp_connect_and_accept() @test
 {
-    bool connected;
-    bool accepted;
-    int connect_status;
-}
-
-// Client side: the connect completed (success or failure).
-fn void on_loopback_connect(c3io::tcp::TcpConnection* conn, int status, void* user_data)
-{
-    LoopbackState* state = user_data;
-    state.connected = true;
-    state.connect_status = status;
-    conn.close();  // close the client side; freed async
-}
-
-// Server side: a client was accepted.
-fn void on_loopback_accept(c3io::tcp::TcpConnection* server, c3io::tcp::TcpConnection* client, void* user_data)
-{
-    LoopbackState* state = user_data;
-    state.accepted = true;
-    client.close();  // close the accepted (server-side) client
-    server.close();  // stop listening so the loop can drain and run() returns
-}
-
-<*
- Test a real TCP connect + accept over the loopback interface (127.0.0.1).
- Starts an in-process server, connects a client to it, and verifies both the
- client connect callback and the server accept callback fire. No external network
- is used, so this completes in milliseconds and is deterministic.
-*>
-fn void test_tcp_connect_loopback() @test
-{
-    event_loop::EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
-
-    event_loop::EventLoop loop = loop_opt;
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
 
-    LoopbackState state;
-    state.connected = false;
-    state.accepted = false;
-    state.connect_status = -1;
+    Server server;
+    SocketAddr server_addr = start_server(&loop, &server);
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect, &client)!!;
 
-    ushort port = 47921;
+    @pump(&loop, client.connected && server.accepted);
+    assert(client.connect_status == 0);
+    assert(server.accept_status == 0);
+    assert(server.client != null);
+    assert(client.conn.peer_addr()!! == server_addr);
+    assert(server.client.peer_addr()!! == client.conn.local_addr()!!);
 
-    // Start a localhost server.
-    c3io::tcp::TcpConnection*? server_opt = c3io::tcp::create(&loop);
-    if (catch err = server_opt)
-    {
-        assert(false, "Should create server connection");
-    }
-    c3io::tcp::TcpConnection* server = server_opt;
-
-    if (catch err = server.bind("127.0.0.1", port))
-    {
-        assert(false, "Should bind server to 127.0.0.1");
-    }
-    if (catch err = server.listen(128, &on_loopback_accept, &state))
-    {
-        assert(false, "Should listen on server");
-    }
-
-    // Connect a client to the server.
-    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::connect(
-        &loop, "127.0.0.1", port, &on_loopback_connect, &state
-    );
-    if (catch err = conn_opt)
-    {
-        assert(false, "Should initiate loopback connect");
-    }
-
-    // Runs until the client, the accepted client, and the server are all closed.
-    (void)loop.run();
-
-    assert(state.connected, "Client connect callback should fire");
-    assert(state.accepted, "Server accept callback should fire");
-    assert(state.connect_status == 0, "Loopback connect should succeed");
+    client.conn.close();
+    server.close();
+    @drain(&loop);
 }
 
-<*
- Test setting TCP options (nodelay, keepalive).
-*>
+fn void test_tcp_connect_refused_closes_connection() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    // A bound but not listening socket reserves a port nobody accepts on.
+    TcpConnection* placeholder = tcp::create(&loop)!!;
+    placeholder.bind(net::addr("127.0.0.1", 0)!!)!!;
+    SocketAddr addr = placeholder.local_addr()!!;
+
+    Client client;
+    tcp::connect(&loop, addr, &on_connect, &client)!!;
+    @pump(&loop, client.connected);
+    assert(client.connect_status < 0, "Connect should fail");
+
+    placeholder.close();
+    @drain(&loop);  // The failed connection was closed for us.
+}
+
+fn void on_unused_connect(TcpConnection* conn, int status, void* user_data)
+{
+}
+
+fn void test_tcp_connect_that_cannot_start_leaves_loop_closable() @test
+{
+    EventLoop loop = event_loop::create()!!;
+
+    SocketAddr no_family;  // Neither IPv4 nor IPv6
+    if (try tcp::connect(&loop, no_family, &on_unused_connect))
+    {
+        assert(false, "Connecting to an address without a family should fail");
+    }
+    @drain(&loop);
+
+    if (catch err = loop.close()) assert(false, "Loop should close after the failed connect");
+    free(loop.loop);
+}
+
+fn void test_tcp_echo_then_eof() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    Server server = { .read_client = true, .reply = "pong" };
+    SocketAddr server_addr = start_server(&loop, &server);
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect, &client)!!;
+
+    @pump(&loop, client.connected && server.client != null);
+    client.conn.write("ping")!!;
+    @pump(&loop, client.received_len == 4);
+    assert((String)server.received[:server.received_len] == "ping");
+    assert((String)client.received[:client.received_len] == "pong");
+
+    server.client.close();
+    server.client = null;
+    @pump(&loop, client.eof);
+    assert(client.eof, "Client should see end of stream as UV_EOF");
+
+    client.conn.close();
+    server.close();
+    @drain(&loop);
+}
+
+fn void test_tcp_reset_is_reported_as_error() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    // The server never reads. Closing a socket with unread data makes the
+    // kernel reset the connection instead of ending it cleanly.
+    Server server;
+    SocketAddr server_addr = start_server(&loop, &server);
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect, &client)!!;
+    @pump(&loop, client.connected && server.client != null);
+
+    int written;
+    client.conn.write("unread", &on_written, &written)!!;
+    @pump(&loop, written == 1);
+    server.client.close();
+    server.client = null;
+
+    @pump(&loop, client.read_status < 0);
+    assert(client.read_status < 0, "Client should get a negative read status");
+    assert(!client.eof, "A reset is an error, not end of stream");
+    if (env::LINUX) assert(client.read_status == uv::UV_ECONNRESET);
+
+    client.conn.close();
+    server.close();
+    @drain(&loop);
+}
+
+char[8] static_buffer;
+
+fn char[] alloc_static(TcpConnection* conn, usz suggested_size, void* user_data)
+{
+    return &static_buffer;
+}
+
+fn void on_connect_static(TcpConnection* conn, int status, void* user_data)
+{
+    Client* client = user_data;
+    client.connected = true;
+    client.connect_status = status;
+    conn.read_start(&on_client_read, client, &alloc_static)!!;
+}
+
+fn void test_tcp_caller_buffer_is_not_freed() @test
+{
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    Server server = { .read_client = true, .reply = "0123456789abcdef" };
+    SocketAddr server_addr = start_server(&loop, &server);
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect_static, &client)!!;
+    @pump(&loop, client.connected && server.client != null);
+
+    client.conn.write("x")!!;
+    @pump(&loop, client.received_len == 16);
+    assert((String)client.received[:16] == "0123456789abcdef");
+    assert(client.last_ptr == &static_buffer, "Data should arrive in the caller's buffer");
+
+    client.conn.close();
+    server.close();
+    @drain(&loop);
+}
+
+fn void on_written(TcpConnection* conn, int status, void* user_data)
+{
+    int* written = user_data;
+    if (status == 0) (*written)++;
+}
+
+fn void test_tcp_writes_reuse_pooled_memory() @test
+{
+    TrackingAllocator tracker;
+    tracker.init(mem);
+    defer tracker.free();
+
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+
+    Server server = { .read_client = true };
+    SocketAddr server_addr = start_server(&loop, &server);
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect, &client, &tracker)!!;
+    @pump(&loop, client.connected && server.client != null);
+    sz baseline = tracker.total_allocation_count();
+
+    int written;
+    for (int batch = 0; batch < 100; batch++)
+    {
+        for (int i = 0; i < 10; i++) client.conn.write("tick", &on_written, &written)!!;
+        @pump(&loop, written == (batch + 1) * 10);
+    }
+    assert(written == 1000);
+    assert(tracker.total_allocation_count() - baseline <= tcp::WRITE_POOL_MAX,
+           "Writes should reuse pooled requests");
+
+    client.conn.close();
+    server.close();
+    @drain(&loop);
+    assert(tracker.allocation_count() == 0);
+}
+
 fn void test_tcp_options() @test
 {
-    event_loop::EventLoop? loop_opt = event_loop::create();
-    if (catch err = loop_opt)
-    {
-        assert(false, "Should create event loop");
-    }
+    EventLoop loop = event_loop::create()!!;
+    defer loop.free();
+    TcpConnection* conn = tcp::create(&loop)!!;
+    conn.set_nodelay(true)!!;
+    conn.set_keepalive(true, 60)!!;
+    conn.close();
+    @drain(&loop);
+}
 
-    event_loop::EventLoop loop = loop_opt;
+fn void test_tcp_ipv6_connect() @test
+{
+    EventLoop loop = event_loop::create()!!;
     defer loop.free();
 
-    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::create(&loop);
-    if (catch err = conn_opt)
-    {
-        assert(false, "Should create TCP connection");
-    }
+    TcpConnection* probe = tcp::create(&loop)!!;
+    bool has_ipv6 = @ok(probe.bind(net::addr("::1", 0)!!));
+    probe.close();
+    @drain(&loop);
+    if (!has_ipv6) return;
 
-    c3io::tcp::TcpConnection* conn = conn_opt;
+    Server server;
+    SocketAddr server_addr = start_server(&loop, &server, "::1");
+    assert(server_addr.is_ipv6());
+    Client client;
+    client.conn = tcp::connect(&loop, server_addr, &on_connect, &client)!!;
+    @pump(&loop, client.connected && server.accepted);
+    assert(client.connect_status == 0);
 
-    // Test nodelay
-    if (catch err = conn.set_nodelay(true))
-    {
-        assert(false, "Should set TCP_NODELAY");
-    }
-
-    // Test keepalive
-    if (catch err = conn.set_keepalive(true, 60))
-    {
-        assert(false, "Should set TCP keepalive");
-    }
-
-    conn.close();
-    // Run event loop to process close callback
-    (void)loop.run();
-
-    assert(true, "TCP options set successfully");
-}
-
-<*
- Read callback for testing.
-*>
-struct ReadResult
-{
-    bool called;
-    int bytes_received;
-}
-
-fn char[] on_test_alloc(c3io::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
-{
-    // Allocate a buffer for reading
-    char[] buf = mem::new_array(char, (sz)suggested_size);
-    return buf;
-}
-
-fn void on_test_read(c3io::tcp::TcpConnection* conn, char[] data, void* user_data)
-{
-    ReadResult* result = user_data;
-    result.called = true;
-    result.bytes_received = (int)data.len;
-
-    if (data.len > 0)
-    {
-        io::printfn("Received %d bytes", data.len);
-    }
-    else
-    {
-        io::printfn("Connection closed or error");
-    }
-
-    // Stop reading and event loop
-    (void)conn.stop_read();
-    conn.loop.stop();
-}
-
-<*
- Write callback for testing.
-*>
-struct WriteResult
-{
-    bool called;
-    int status;
-}
-
-fn void on_test_write(c3io::tcp::TcpConnection* conn, int status, void* user_data)
-{
-    WriteResult* result = user_data;
-    result.called = true;
-    result.status = status;
-
-    io::printfn("Write completed with status: %d", status);
-}
-
-<*
- Test full HTTP request to google.com.
- This tests connect -> write -> read cycle.
- NOTE: Simplified version without nested callbacks due to C3 limitations.
-*>
-fn void test_tcp_http_request() @test
-{
-    // Skip this test for now - requires refactoring to avoid nested functions
-    // The basic connection test above validates the core functionality
-    io::printfn("Skipping HTTP test (requires nested function support)");
-    assert(true, "Test skipped");
-}
-
-fn void on_unused_connect(c3io::tcp::TcpConnection* conn, int status, void* user_data)
-{
-}
-
-<*
- A connect that fails to parse its address must close the handle it created,
- so the loop can still be closed afterwards.
-*>
-fn void test_tcp_connect_bad_address_leaves_loop_closable() @test
-{
-    event_loop::EventLoop loop = event_loop::create()!!;
-
-    if (try c3io::tcp::connect(&loop, "not-an-ip", 80, &on_unused_connect))
-    {
-        assert(false, "Connecting to an invalid address should fail");
-    }
-    while (loop.is_alive()) loop.run_once();
-
-    if (catch err = loop.close())
-    {
-        assert(false, "Loop should close once the failed connection is cleaned up");
-    }
-    free(loop.loop);
+    client.conn.close();
+    server.close();
+    @drain(&loop);
 }

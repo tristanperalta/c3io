@@ -65,3 +65,101 @@ macro alloc_req(Allocator allocator, $Type, uv::ReqType type)
 {
     return ($Type*)alloc::calloc(allocator, (sz)uv::req_size(type));
 }
+
+<*
+ A uv request together with a copy of the data it sends, in one allocation:
+ this struct, then the request, then the data.
+*>
+struct PooledRequest
+{
+    PooledRequest* next_free;
+    usz capacity;     // Bytes of room for data
+    void* req;        // The uv request; its data field points back here
+    char* data;
+    uv::Buf buf;      // The data copy, as passed to libuv
+    void* owner;      // The socket or connection that queued it
+    void* callback;   // The caller's completion callback
+    void* user_data;
+}
+
+<*
+ Recycles PooledRequests whose data fits pooled_capacity, so a socket that
+ sends small messages steadily stops allocating once the pool is warm.
+*>
+struct RequestPool
+{
+    Allocator allocator;
+    uv::ReqType type;
+    usz pooled_capacity;
+    int max_pooled;
+    PooledRequest* free_list;
+    int count;
+}
+
+fn void RequestPool.init(&self, Allocator allocator, uv::ReqType type, usz pooled_capacity,
+                         int max_pooled)
+{
+    *self = { .allocator = allocator, .type = type, .pooled_capacity = pooled_capacity,
+              .max_pooled = max_pooled };
+}
+
+macro usz align16(usz n) @private => (n + 15) & ~(usz)15;
+
+<*
+ Get a request whose buffer holds a copy of `data`.
+*>
+fn PooledRequest* RequestPool.acquire(&self, char[] data)
+{
+    PooledRequest* r;
+    if (data.len <= self.pooled_capacity && self.free_list)
+    {
+        r = self.free_list;
+        self.free_list = r.next_free;
+        self.count--;
+    }
+    else
+    {
+        usz capacity = data.len <= self.pooled_capacity ? self.pooled_capacity : data.len;
+        usz req_offset = align16(PooledRequest::size);
+        usz data_offset = req_offset + align16(uv::req_size(self.type));
+        char* block = alloc::calloc(self.allocator, (sz)(data_offset + capacity));
+        r = (PooledRequest*)block;
+        r.capacity = capacity;
+        r.req = block + req_offset;
+        r.data = block + data_offset;
+        uv::req_set(r.req, r);
+    }
+    if (data.len) mem::copy(r.data, data.ptr, data.len);
+    r.buf = { .base = r.data, .len = data.len };
+    return r;
+}
+
+<*
+ Return a request to the pool, or free it if the pool is full or the
+ request is larger than pooled_capacity.
+*>
+fn void RequestPool.release(&self, PooledRequest* r)
+{
+    if (r.capacity == self.pooled_capacity && self.count < self.max_pooled)
+    {
+        r.next_free = self.free_list;
+        self.free_list = r;
+        self.count++;
+        return;
+    }
+    alloc::free(self.allocator, r);
+}
+
+<*
+ Free every pooled request.
+*>
+fn void RequestPool.free(&self)
+{
+    while (self.free_list)
+    {
+        PooledRequest* next = self.free_list.next_free;
+        alloc::free(self.allocator, self.free_list);
+        self.free_list = next;
+    }
+    self.count = 0;
+}

@@ -38,7 +38,7 @@ fn void test_tcp_bind_with_sliced_ip() @test
     TcpConnection* server = tcp::create(&loop)!!;
     String ip = unterminated_slice("127.0.0.1:7777", 9);
     defer free(ip.ptr);
-    server.bind(ip, 0)!!;
+    server.bind(net::addr(ip, 0)!!)!!;
     server.close();
     while (loop.is_alive()) loop.run_once();
 }

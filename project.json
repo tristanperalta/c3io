@@ -6,7 +6,7 @@
   ],
   "version": "0.2.1",
   "warnings": ["no-unused"],
-  "sources": ["c3io.c3", "dns.c3", "event_loop.c3", "file.c3", "net.c3", "tcp.c3", "timer.c3", "udp.c3", "uv.c3i", "work.c3"],
+  "sources": ["c3io.c3", "dns.c3", "event_loop.c3", "file.c3", "fswatch.c3", "net.c3", "tcp.c3", "timer.c3", "udp.c3", "uv.c3i", "work.c3"],
   "test-sources": ["test/**"],
   "output": ".",
   "targets": {

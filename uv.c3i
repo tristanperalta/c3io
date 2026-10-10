@@ -22,6 +22,8 @@ alias Stream = void;      // uv_stream_t (base for TCP, pipe, etc.)
 alias Tcp = void;         // uv_tcp_t
 alias Udp = void;         // uv_udp_t
 alias Timer = void;       // uv_timer_t
+alias FsEvent = void;     // uv_fs_event_t
+alias FsPoll = void;      // uv_fs_poll_t
 
 // Request types
 alias Req = void;         // uv_req_t (use req_get_data/req_set_data)
@@ -261,6 +263,10 @@ alias TimerCb = fn void(Timer* handle);
 
 // DNS callback - called when DNS resolution completes
 alias GetAddrInfoCb = fn void(GetAddrInfo* req, int status, AddrInfo* res);
+
+// File watching callbacks
+alias FsEventCb = fn void(FsEvent* handle, ZString filename, int events, int status);
+alias FsPollCb = fn void(FsPoll* handle, int status, FileStat* prev, FileStat* curr);
 
 // Thread pool work callbacks
 alias WorkCb = fn void(Work* req);
@@ -968,6 +974,73 @@ extern fn int fs_scandir(Loop* loop, Fs* req, char* path, int flags, FsCb cb) @c
  @return "UV_EOF when no more entries, 0 on success, negative error code on failure"
 *>
 extern fn int fs_scandir_next(Fs* req, Dirent* ent) @cname("uv_fs_scandir_next");
+
+// ============================================================================
+// File Watching Functions
+// ============================================================================
+
+<*
+ Initialize a filesystem event handle.
+
+ @param loop : "Event loop"
+ @param handle : "Handle to initialize"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_event_init(Loop* loop, FsEvent* handle) @cname("uv_fs_event_init");
+
+<*
+ Start watching a file or directory for changes.
+
+ @param handle : "Initialized fs event handle"
+ @param cb : "Called with the changed file name and UV_RENAME/UV_CHANGE events"
+ @param path : "File or directory to watch"
+ @param flags : "UV_FS_EVENT_* flags"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_event_start(FsEvent* handle, FsEventCb cb, char* path, uint flags) @cname("uv_fs_event_start");
+
+<*
+ Stop watching.
+
+ @param handle : "Fs event handle"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_event_stop(FsEvent* handle) @cname("uv_fs_event_stop");
+
+<*
+ Initialize a filesystem poll handle.
+
+ @param loop : "Event loop"
+ @param handle : "Handle to initialize"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_poll_init(Loop* loop, FsPoll* handle) @cname("uv_fs_poll_init");
+
+<*
+ Start polling a path's stat for changes every `interval` milliseconds.
+
+ @param handle : "Initialized fs poll handle"
+ @param cb : "Called with the previous and current stat when they differ"
+ @param path : "Path to poll"
+ @param interval : "Poll interval in milliseconds"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_poll_start(FsPoll* handle, FsPollCb cb, char* path, uint interval) @cname("uv_fs_poll_start");
+
+<*
+ Stop polling.
+
+ @param handle : "Fs poll handle"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_poll_stop(FsPoll* handle) @cname("uv_fs_poll_stop");
+
+// Fs event bits passed to FsEventCb
+const int UV_RENAME = 1;
+const int UV_CHANGE = 2;
+
+// fs_event_start flags
+const uint UV_FS_EVENT_RECURSIVE = 4;  // Watch subdirectories (macOS and Windows only)
 
 // ============================================================================
 // UDP Functions

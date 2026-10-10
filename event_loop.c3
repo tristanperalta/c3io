@@ -62,6 +62,7 @@ struct PendingRequest
     PendingRequest* next;
     uv::Req* req;
     RequestId id;
+    bool cancelled;
 }
 
 <*
@@ -125,6 +126,7 @@ fn RequestId EventLoop.track(&self, PendingRequest* entry, void* req)
 {
     entry.req = req;
     entry.id = ++self.next_request_id;
+    entry.cancelled = false;
     entry.prev = null;
     entry.next = self.pending;
     if (self.pending) self.pending.prev = entry;
@@ -225,7 +227,10 @@ fn bool EventLoop.cancel(&self, RequestId id)
 {
     for (PendingRequest* entry = self.pending; entry; entry = entry.next)
     {
-        if (entry.id == id) return uv::cancel(entry.req) == 0;
+        if (entry.id != id) continue;
+        if (entry.cancelled || uv::cancel(entry.req) != 0) return false;
+        entry.cancelled = true;
+        return true;
     }
     return false;
 }
@@ -248,7 +253,7 @@ fn bool EventLoop.shutdown(&self, int max_iterations = 64)
 {
     for (PendingRequest* entry = self.pending; entry; entry = entry.next)
     {
-        (void)uv::cancel(entry.req);
+        if (!entry.cancelled && uv::cancel(entry.req) == 0) entry.cancelled = true;
     }
     uv::walk(self.loop, &close_walk_cb, null);
     for (int i = 0; i < max_iterations && self.is_alive(); i++)
@@ -284,97 +289,4 @@ fn void? EventLoop.free(&self){
     self.close()!;
     alloc::free(self.allocator, self.loop);
     self.loop = null;
-}
-
-// Thread Pool / Work Queue Support
-// =================================
-
-// Callback types for thread pool work
-alias WorkFunction = fn void(void* input, void** output);  // Runs in thread pool
-alias CompletionCallback = fn void(void* output, int status, void* user_data);  // Runs in event loop
-
-<*
- Work context - holds all data for a thread pool operation.
-*>
-struct WorkContext
-{
-    uv::Work* work_req;        // libuv work request handle
-    void* input;               // Input data (read by worker thread)
-    void* output;              // Output data (set by worker thread, read by callback)
-    WorkFunction work_fn;      // Function to run in thread pool
-    CompletionCallback callback;  // Completion callback in event loop
-    void* user_data;           // User data passed to callback
-    int error;                 // Error code (0 = success)
-    Allocator allocator;       // Allocator of work_req (set by queue_work)
-}
-
-<*
- Internal callback - runs in THREAD POOL thread.
- This is safe to block! We're not in the event loop.
-*>
-fn void do_work_in_thread_pool(uv::Work* req)
-{
-    WorkContext* ctx = (WorkContext*)uv::req_get_data((uv::Req*)req);
-
-    if (ctx.work_fn)
-    {
-        // Call user's work function - CAN BLOCK safely!
-        ctx.work_fn(ctx.input, &ctx.output);
-    }
-}
-
-<*
- Internal callback - runs in EVENT LOOP thread after work completes.
- This must NOT block - we're back in the main event loop.
-*>
-fn void after_work_in_event_loop(uv::Work* req, int status)
-{
-    WorkContext* ctx = (WorkContext*)uv::req_get_data((uv::Req*)req);
-
-    // Store status
-    ctx.error = status;
-
-    // Clean up work request BEFORE calling callback
-    // This allows the callback to safely free the WorkContext
-    alloc::free(ctx.allocator, ctx.work_req);
-    ctx.work_req = null;
-
-    // Call user completion callback in event loop thread
-    if (ctx.callback)
-    {
-        ctx.callback(ctx.output, status, ctx.user_data);
-    }
-
-    // Note: We don't free ctx itself - the user might still need output data
-    // The user is responsible for freeing ctx when done with output
-}
-
-<*
- Queue work to run in thread pool.
-
- The work function runs in a background thread and can safely block.
- The completion callback runs in the event loop thread when work is done.
-
- @param ctx : "Work context (caller must allocate)"
- @return "0 on success, negative error code on failure"
-*>
-fn int EventLoop.queue_work(&self, WorkContext* ctx){
-    // Allocate uv_work_t handle
-    ctx.allocator = self.allocator;
-    ctx.work_req = c3io::alloc_req(self.allocator, uv::Work, uv::ReqType.WORK);
-    uv::req_set_data((uv::Req*)ctx.work_req, ctx);
-
-    // Queue work
-    int result = uv::queue_work(self.loop, ctx.work_req,
-                                  &do_work_in_thread_pool,
-                                  &after_work_in_event_loop);
-
-    if (result != 0)
-    {
-        alloc::free(self.allocator, ctx.work_req);
-        ctx.work_req = null;
-        return result;
-    }
-
-    return 0;
 }

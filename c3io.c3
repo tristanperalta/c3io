@@ -67,6 +67,22 @@ macro alloc_req(Allocator allocator, $Type, uv::ReqType type)
 }
 
 <*
+ Allocate a zeroed context struct followed by a uv request of `type`, in one
+ block. $Ctx must have a `req` field, which is set to the request; the
+ request's data field points back at the context. Free the context to free
+ both.
+*>
+macro alloc_with_req(Allocator allocator, $Ctx, uv::ReqType type)
+{
+    usz offset = align16($Ctx::size);
+    char* block = alloc::calloc(allocator, (sz)(offset + uv::req_size(type)));
+    $Ctx* ctx = ($Ctx*)block;
+    ctx.req = (void*)(block + offset);
+    uv::req_set(ctx.req, ctx);
+    return ctx;
+}
+
+<*
  A uv request together with a copy of the data it sends, in one allocation:
  this struct, then the request, then the data.
 *>

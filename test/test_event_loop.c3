@@ -3,6 +3,7 @@ module c3io::event_loop_test;
 import c3io;
 import c3io::event_loop;
 import c3io::uv;
+import c3io::work;
 import std::thread;
 import std::time;
 import std::io;
@@ -86,14 +87,14 @@ fn void test_event_loop_run_modes() @test
     assert(!alive, "Empty loop should not be alive after once");
 }
 
-fn void sleep_200ms(void* input, void** output)
+fn void sleep_200ms(void* arg)
 {
     thread::sleep_ms(200);
 }
 
-fn void on_work_done(void* output, int status, void* user_data)
+fn void on_work_done(void* arg, int status)
 {
-    *(int*)user_data = status;
+    *(int*)arg = status;
 }
 
 <*
@@ -106,8 +107,7 @@ fn void test_shutdown_does_not_block_on_running_work() @test
     event_loop::EventLoop loop = event_loop::create()!!;
 
     int status = 1;
-    event_loop::WorkContext ctx = { .work_fn = &sleep_200ms, .callback = &on_work_done, .user_data = &status };
-    assert(loop.queue_work(&ctx) == 0);
+    work::queue(&loop, &sleep_200ms, &on_work_done, &status)!!;
     thread::sleep_ms(20);  // Let a pool thread pick the work up.
 
     Clock start = clock::now();

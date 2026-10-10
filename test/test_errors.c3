@@ -11,18 +11,18 @@ fn void test_failed_call_records_status() @test
     defer loop.free()!!;
 
     UdpSocket* socket = udp::create(&loop)!!;
-    socket.bind(net::addr("127.0.0.1", 0)!!)!!;
-    // Binding a socket twice fails in libuv with EINVAL.
-    if (catch err = socket.bind(net::addr("127.0.0.1", 0)!!))
+    // 192.0.2.1 is reserved for documentation (TEST-NET-1), so no local
+    // interface has it.
+    if (catch err = socket.bind(net::addr("192.0.2.1", 0)!!))
     {
         assert(err == udp::UDP_BIND_FAILED);
         assert(c3io::last_status() < 0);
-        assert(c3io::error_name(c3io::last_status()) == "EINVAL");
+        assert(c3io::error_name(c3io::last_status()) == "EADDRNOTAVAIL");
         assert(c3io::error_message(c3io::last_status()).len > 0);
     }
     else
     {
-        assert(false, "Binding twice should fail");
+        assert(false, "Binding a non-local address should fail");
     }
 
     socket.close();

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / c3c ${{ matrix.c3c }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # The oldest supported release, and the current prerelease.
+        c3c: [v0.8.4, latest-prerelease-tag]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libuv (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libuv1-dev
+          echo "C3_FLAGS=" >> "$GITHUB_ENV"
+
+      - name: Install libuv (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install libuv
+          echo "C3_FLAGS=-L $(brew --prefix)/lib" >> "$GITHUB_ENV"
+
+      - name: Install libuv (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install libuv:x64-windows
+          $root = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
+          "$root\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "C3_FLAGS=-L $root\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install c3c (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sSL https://github.com/c3lang/c3c/releases/download/${{ matrix.c3c }}/c3-linux.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/c3" >> "$GITHUB_PATH"
+
+      - name: Install c3c (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/c3.zip" https://github.com/c3lang/c3c/releases/download/${{ matrix.c3c }}/c3-macos.zip
+          unzip -q "$RUNNER_TEMP/c3.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/c3" >> "$GITHUB_PATH"
+
+      - name: Install c3c (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://github.com/c3lang/c3c/releases/download/${{ matrix.c3c }}/c3-windows.zip -OutFile "$env:RUNNER_TEMP\c3.zip"
+          Expand-Archive "$env:RUNNER_TEMP\c3.zip" -DestinationPath "$env:RUNNER_TEMP"
+          "$env:RUNNER_TEMP\c3" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Build
+        shell: bash
+        run: |
+          c3c --version
+          c3c build c3io $C3_FLAGS
+
+      - name: Test
+        shell: bash
+        run: c3c test $C3_FLAGS
+
+      - name: Test with AddressSanitizer
+        if: runner.os == 'Linux'
+        run: c3c test --sanitize=address $C3_FLAGS

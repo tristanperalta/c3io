@@ -51,6 +51,19 @@ macro void? @check(int result, err)
 fn void set_last_status(int result) => last_status_code = result;
 
 <*
+ A uv::Buf for `len` bytes at `base`. Windows buffers hold at most 4 GiB, so
+ the length is clamped there; libuv then reports a short read or write.
+*>
+fn uv::Buf make_buf(void* base, usz len)
+{
+    $if env::WIN32:
+        return { .base = base, .len = len > uint::max ? uint::max : (uint)len };
+    $else
+        return { .base = base, .len = len };
+    $endif
+}
+
+<*
  Allocate zeroed memory for a libuv handle of the given type.
 *>
 macro alloc_handle(Allocator allocator, $Type, uv::HandleType type)
@@ -146,7 +159,7 @@ fn PooledRequest* RequestPool.acquire(&self, char[] data)
         uv::req_set(r.req, r);
     }
     if (data.len) mem::copy(r.data, data.ptr, data.len);
-    r.buf = { .base = r.data, .len = data.len };
+    r.buf = make_buf(r.data, data.len);
     return r;
 }
 

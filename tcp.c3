@@ -205,8 +205,7 @@ fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf) 
         }
         target = conn.read_buffer;
     }
-    buf.base = target.ptr;
-    buf.len = target.len;
+    *buf = c3io::make_buf(target.ptr, target.len);
 }
 
 fn void on_read_internal(uv::Stream* stream, sz nread, uv::Buf* buf) @private
@@ -269,7 +268,7 @@ fn void on_write_internal(uv::Write* req, int status) @private
 *>
 fn sz? TcpConnection.try_write(&self, char[] data)
 {
-    uv::Buf buf = { .base = data.ptr, .len = data.len };
+    uv::Buf buf = c3io::make_buf(data.ptr, data.len);
     int result = uv::try_write((uv::Stream*)self.handle, &buf, 1);
     if (result >= 0) return result;
     c3io::set_last_status(result);

@@ -111,12 +111,19 @@ enum ReqType : int
 
 <*
  Buffer structure for read/write operations.
- Points to a memory region for I/O.
+ Points to a memory region for I/O. Windows stores the length first, as a
+ 32-bit value.
 *>
-struct Buf
+struct Buf @feat(!WIN32)
 {
 	char* base;
 	usz len;
+}
+
+struct Buf @feat(WIN32)
+{
+	uint len;
+	char* base;
 }
 
 <*
@@ -201,21 +208,22 @@ struct FileStat
 	ulong st_blocks;
 	ulong st_flags;
 	ulong st_gen;
-	ulong st_atim_sec;
-	ulong st_atim_nsec;
-	ulong st_mtim_sec;
-	ulong st_mtim_nsec;
-	ulong st_ctim_sec;
-	ulong st_ctim_nsec;
-	ulong st_birthtim_sec;
-	ulong st_birthtim_nsec;
+	// uv_timespec_t fields are C longs: 32-bit on Windows.
+	CLong st_atim_sec;
+	CLong st_atim_nsec;
+	CLong st_mtim_sec;
+	CLong st_mtim_nsec;
+	CLong st_ctim_sec;
+	CLong st_ctim_nsec;
+	CLong st_birthtim_sec;
+	CLong st_birthtim_nsec;
 }
 
 <*
  Address info structure (from struct addrinfo).
  Used for DNS resolution results.
 *>
-struct AddrInfo
+struct AddrInfo @feat(LINUX | ANDROID)
 {
 	int ai_flags;
 	int ai_family;       // AF_INET, AF_INET6, etc.
@@ -225,6 +233,32 @@ struct AddrInfo
 	Sockaddr* ai_addr;   // Socket address
 	char* ai_canonname;  // Canonical name
 	AddrInfo* ai_next;   // Next in linked list
+}
+
+// Darwin and the BSDs put ai_canonname before ai_addr.
+struct AddrInfo @feat(DARWIN | BSD)
+{
+	int ai_flags;
+	int ai_family;
+	int ai_socktype;
+	int ai_protocol;
+	uint ai_addrlen;
+	char* ai_canonname;
+	Sockaddr* ai_addr;
+	AddrInfo* ai_next;
+}
+
+// Windows also puts ai_canonname first, and ai_addrlen is a size_t.
+struct AddrInfo @feat(WIN32)
+{
+	int ai_flags;
+	int ai_family;
+	int ai_socktype;
+	int ai_protocol;
+	usz ai_addrlen;
+	char* ai_canonname;
+	Sockaddr* ai_addr;
+	AddrInfo* ai_next;
 }
 
 // ============================================================================
@@ -815,7 +849,7 @@ const int IPPROTO_UDP = 17;  // UDP protocol
 const int AI_PASSIVE = 1;       // Socket address for bind()
 const int AI_CANONNAME = 2;     // Fill in ai_canonname
 const int AI_NUMERICHOST = 4;   // Prevent hostname resolution
-const int AI_NUMERICSERV = 1024; // Service is numeric port
+const int AI_NUMERICSERV = env::WIN32 ? 0x8 : env::DARWIN ? 0x1000 : env::OPENBSD ? 0x10 : env::BSD_FAMILY ? 0x8 : 0x400;  // Service is numeric port
 
 // ============================================================================
 // Filesystem Functions

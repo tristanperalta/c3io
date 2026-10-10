@@ -97,8 +97,7 @@ fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf) 
         }
         target = socket.recv_buffer;
     }
-    buf.base = target.ptr;
-    buf.len = target.len;
+    *buf = c3io::make_buf(target.ptr, target.len);
 }
 
 fn void on_recv_internal(uv::Udp* handle, sz nread, uv::Buf* buf, uv::Sockaddr* addr, uint flags) @private
@@ -211,7 +210,7 @@ fn void? UdpSocket.disconnect(&self)
 *>
 fn sz? UdpSocket.try_send(&self, SocketAddr* to, char[] data)
 {
-    uv::Buf buf = { .base = data.ptr, .len = data.len };
+    uv::Buf buf = c3io::make_buf(data.ptr, data.len);
     int result = uv::udp_try_send(self.handle, &buf, 1, to ? to.sockaddr() : null);
     if (result >= 0) return result;
     c3io::set_last_status(result);

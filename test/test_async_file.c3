@@ -2,6 +2,7 @@ module c3io::file::test;
 
 import c3io::file;
 import c3io::event_loop;
+import c3io::test_support;
 import c3io::uv;
 import std::io;
 
@@ -62,7 +63,7 @@ fn void test_open_close_file() @test
     ctx.loop = &loop;
 
     // Open a temporary test file
-    c3io::file::open(&loop, "/tmp/test_async_file_temp.txt",
+    c3io::file::open(&loop, test_support::temp_path("test_async_file_temp.txt"),
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
                      420, &on_open_then_close, &ctx)!!;
 
@@ -161,7 +162,7 @@ fn void test_write_read_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    c3io::file::open(&loop, "/tmp/test_async_rw.txt",
+    c3io::file::open(&loop, test_support::temp_path("test_async_rw.txt"),
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_write, &ctx)!!;
 
@@ -215,7 +216,7 @@ fn void on_close_before_stat(int status, void* user_data)
     }
 
     // Now stat the file
-    c3io::file::stat(ctx.loop, "/tmp/test_async_stat.txt", &on_stat_verify, user_data)!!;
+    c3io::file::stat(ctx.loop, test_support::temp_path("test_async_stat.txt"), &on_stat_verify, user_data)!!;
 }
 
 fn void on_write_for_stat(int bytes_written, int status, void* user_data)
@@ -267,7 +268,7 @@ fn void test_stat_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    c3io::file::open(&loop, "/tmp/test_async_stat.txt",
+    c3io::file::open(&loop, test_support::temp_path("test_async_stat.txt"),
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_stat, &ctx)!!;
 
@@ -325,7 +326,7 @@ fn void test_ftruncate_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    c3io::file::open(&loop, "/tmp/test_async_truncate.txt",
+    c3io::file::open(&loop, test_support::temp_path("test_async_truncate.txt"),
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_truncate, &ctx)!!;
 
@@ -373,7 +374,7 @@ fn void test_mkdir() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    c3io::file::mkdir(&loop, "/tmp/test_async_dir", 493, &on_mkdir_verify, &ctx)!!;
+    c3io::file::mkdir(&loop, test_support::temp_path("test_async_dir"), 493, &on_mkdir_verify, &ctx)!!;
 
     while (!ctx.completed)
     {

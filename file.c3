@@ -28,13 +28,14 @@ import c3io::event_loop;
    // When done:  file.close(&on_close, user_data)!;
 *>
 
-// File open flags (map to uv constants)
-const int OPEN_RDONLY = 0x0000;  // O_RDONLY
-const int OPEN_WRONLY = 0x0001;  // O_WRONLY
-const int OPEN_RDWR   = 0x0002;  // O_RDWR
-const int OPEN_CREATE = 0x0040;  // O_CREAT
-const int OPEN_TRUNC  = 0x0200;  // O_TRUNC
-const int OPEN_APPEND = 0x0400;  // O_APPEND
+// File open flags: libuv's UV_FS_O_* values, which are the platform's
+// O_* flags (the CRT's _O_* flags on Windows).
+const int OPEN_RDONLY = 0x0000;
+const int OPEN_WRONLY = 0x0001;
+const int OPEN_RDWR   = 0x0002;
+const int OPEN_CREATE = env::WIN32 ? 0x0100 : (env::DARWIN || env::BSD_FAMILY) ? 0x0200 : 0x0040;
+const int OPEN_TRUNC  = env::WIN32 ? 0x0200 : (env::DARWIN || env::BSD_FAMILY) ? 0x0400 : 0x0200;
+const int OPEN_APPEND = env::WIN32 ? 0x0008 : (env::DARWIN || env::BSD_FAMILY) ? 0x0008 : 0x0400;
 
 excuse
 {
@@ -258,7 +259,7 @@ fn event_loop::RequestId? FileHandle.read(&self, long offset, usz size, ReadCall
                                           void* user_data = null)
 {
     FsContext* ctx = new_context(self.loop, self.allocator, (void*)callback, user_data);
-    ctx.buf = { .base = alloc::malloc(self.allocator, (sz)size), .len = size };
+    ctx.buf = c3io::make_buf(alloc::malloc(self.allocator, (sz)size), size);
     ctx.owns_buffer = true;
     int result = uv::fs_read(self.loop.loop, ctx.req, self.fd, &ctx.buf, 1, offset, &on_read_internal);
     return ctx.submit(result, FILE_READ_FAILED);
@@ -277,7 +278,7 @@ fn event_loop::RequestId? FileHandle.read_into(&self, long offset, char[] buffer
                                                void* user_data = null)
 {
     FsContext* ctx = new_context(self.loop, self.allocator, (void*)callback, user_data);
-    ctx.buf = { .base = buffer.ptr, .len = buffer.len };
+    ctx.buf = c3io::make_buf(buffer.ptr, buffer.len);
     int result = uv::fs_read(self.loop.loop, ctx.req, self.fd, &ctx.buf, 1, offset, &on_read_internal);
     return ctx.submit(result, FILE_READ_FAILED);
 }
@@ -295,7 +296,7 @@ fn event_loop::RequestId? FileHandle.write(&self, long offset, char[] data, Writ
                                            void* user_data = null)
 {
     FsContext* ctx = new_context(self.loop, self.allocator, (void*)callback, user_data);
-    ctx.buf = { .base = data.ptr, .len = data.len };
+    ctx.buf = c3io::make_buf(data.ptr, data.len);
     int result = uv::fs_write(self.loop.loop, ctx.req, self.fd, &ctx.buf, 1, offset, &on_write_internal);
     return ctx.submit(result, FILE_WRITE_FAILED);
 }
@@ -436,7 +437,7 @@ fn void ReadAllContext.fail_or_close(&self, int status)
 
 fn void ReadAllContext.read_next(&self)
 {
-    self.buf = { .base = self.data.ptr + self.filled, .len = self.data.len - self.filled };
+    self.buf = c3io::make_buf(self.data.ptr + self.filled, self.data.len - self.filled);
     int result = uv::fs_read(self.loop.loop, self.req, self.fd, &self.buf, 1, (long)self.filled,
                              &read_all_on_read);
     if (result < 0) self.fail_or_close(result);

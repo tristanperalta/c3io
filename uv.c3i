@@ -31,18 +31,7 @@ alias Shutdown = void;    // uv_shutdown_t
 alias UdpSend = void;     // uv_udp_send_t
 alias GetAddrInfo = void; // uv_getaddrinfo_t
 alias Work = void;        // uv_work_t (thread pool work request)
-
-// Filesystem request (uv_fs_t) needs inline storage: each fs Context struct in
-// c3io::file embeds this as its first field and recovers the context via a cast
-// on the request pointer, so the size must be fixed. uv_fs_t is 440 bytes on
-// Linux x64 today; 512 leaves headroom. c3io::file::check_fs_size() verifies it
-// fits at startup (this is an interface file, which can't hold function bodies).
-const usz FS_OPAQUE_SIZE = 512;
-
-struct Fs
-{
-	char[FS_OPAQUE_SIZE] _opaque;
-}
+alias Fs = void;          // uv_fs_t
 
 // Directory entry (uv_dirent_t)
 struct Dirent
@@ -900,6 +889,17 @@ extern fn int fs_close(Loop* loop, Fs* req, int file, FsCb cb) @cname("uv_fs_clo
  @return "0 on success, negative error code on failure"
 *>
 extern fn int fs_stat(Loop* loop, Fs* req, char* path, FsCb cb) @cname("uv_fs_stat");
+
+<*
+ Get statistics of an open file asynchronously.
+
+ @param loop : "Event loop"
+ @param req : "Filesystem request"
+ @param file : "File descriptor"
+ @param cb : "Completion callback"
+ @return "0 on success, negative error code on failure"
+*>
+extern fn int fs_fstat(Loop* loop, Fs* req, int file, FsCb cb) @cname("uv_fs_fstat");
 
 <*
  Truncate or extend a file asynchronously.

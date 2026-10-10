@@ -38,7 +38,7 @@ fn void test_loop_allocator_is_used_and_released() @test
 
     bool stat_done;
     bool resolve_done;
-    file::stat(&loop, ".", &on_stat, &stat_done);
+    file::stat(&loop, ".", &on_stat, &stat_done)!!;
     resolver.resolve("localhost", "80", &on_resolve, &resolve_done)!!;
     while (!stat_done || !resolve_done) loop.run_once();
 

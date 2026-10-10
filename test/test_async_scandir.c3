@@ -73,7 +73,7 @@ fn void on_mkdir_subdir(int status, void* user_data)
     }
 
     // Now scan the directory
-    c3io::file::scandir(ctx.loop, "/tmp/test_scandir", &on_scandir_verify, user_data);
+    c3io::file::scandir(ctx.loop, "/tmp/test_scandir", &on_scandir_verify, user_data)!!;
 }
 
 fn void on_close_file2(int status, void* user_data)
@@ -89,7 +89,7 @@ fn void on_close_file2(int status, void* user_data)
     }
 
     // Create subdirectory
-    c3io::file::mkdir(ctx.loop, "/tmp/test_scandir/test_subdir", 493, &on_mkdir_subdir, user_data);
+    c3io::file::mkdir(ctx.loop, "/tmp/test_scandir/test_subdir", 493, &on_mkdir_subdir, user_data)!!;
 }
 
 fn void on_open_file2(c3io::file::FileHandle* file, int status, void* user_data)
@@ -105,7 +105,7 @@ fn void on_open_file2(c3io::file::FileHandle* file, int status, void* user_data)
     }
 
     // Close immediately (we just need the file to exist)
-    file.close(&on_close_file2, user_data);
+    file.close(&on_close_file2, user_data)!!;
 }
 
 fn void on_close_file1(int status, void* user_data)
@@ -123,7 +123,7 @@ fn void on_close_file1(int status, void* user_data)
     // Create second test file
     c3io::file::open(ctx.loop, "/tmp/test_scandir/test_file2.txt",
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
-                     420, &on_open_file2, user_data);
+                     420, &on_open_file2, user_data)!!;
 }
 
 fn void on_open_file1(c3io::file::FileHandle* file, int status, void* user_data)
@@ -139,7 +139,7 @@ fn void on_open_file1(c3io::file::FileHandle* file, int status, void* user_data)
     }
 
     // Close immediately (we just need the file to exist)
-    file.close(&on_close_file1, user_data);
+    file.close(&on_close_file1, user_data)!!;
 }
 
 fn void on_mkdir_base(int status, void* user_data)
@@ -158,7 +158,7 @@ fn void on_mkdir_base(int status, void* user_data)
     // Create first test file
     c3io::file::open(ctx.loop, "/tmp/test_scandir/test_file1.txt",
                      c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
-                     420, &on_open_file1, user_data);
+                     420, &on_open_file1, user_data)!!;
 }
 
 fn void test_scandir_basic() @test
@@ -186,7 +186,7 @@ fn void test_scandir_basic() @test
     //   └── test_subdir/
 
     // Create base directory first (will trigger the rest of the setup)
-    c3io::file::mkdir(&loop, "/tmp/test_scandir", 493, &on_mkdir_base, &ctx);
+    c3io::file::mkdir(&loop, "/tmp/test_scandir", 493, &on_mkdir_base, &ctx)!!;
 
     while (!ctx.completed)
     {
@@ -229,7 +229,7 @@ fn void test_scandir_nonexistent() @test
     ctx.loop = &loop;
 
     // Try to scan non-existent directory
-    c3io::file::scandir(&loop, "/nonexistent/directory/path", &on_scandir_nonexistent, &ctx);
+    c3io::file::scandir(&loop, "/nonexistent/directory/path", &on_scandir_nonexistent, &ctx)!!;
 
     while (!ctx.completed)
     {

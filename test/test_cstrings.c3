@@ -65,7 +65,7 @@ fn void test_stat_with_sliced_path() @test
     String path = unterminated_slice(".does-not-exist", 1);
     defer free(path.ptr);
     StatResult result;
-    file::stat(&loop, path, &on_stat, &result);
+    file::stat(&loop, path, &on_stat, &result)!!;
     while (!result.done) loop.run_once();
     assert(result.status == 0, "stat of '.' should succeed");
 }

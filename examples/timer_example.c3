@@ -19,7 +19,11 @@ fn int main()
         return 1;
     }
     event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
+    defer
+    {
+        while (!loop.shutdown()) {}
+        loop.free()!!;
+    }
 
     // Create a timer
     c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);

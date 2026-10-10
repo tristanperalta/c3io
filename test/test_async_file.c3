@@ -54,7 +54,7 @@ fn void test_open_close_file() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -154,7 +154,7 @@ fn void test_write_read_file() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -260,7 +260,7 @@ fn void test_stat_file() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -318,7 +318,7 @@ fn void test_ftruncate_file() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -366,7 +366,7 @@ fn void test_mkdir() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -403,7 +403,7 @@ fn void test_open_nonexistent_file() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;

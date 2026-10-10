@@ -33,7 +33,7 @@ fn void test_oneshot_timer() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -97,7 +97,7 @@ fn void test_repeating_timer() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -153,7 +153,7 @@ fn void test_stop_timer() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = true;  // Start as true, callback sets to false
@@ -205,7 +205,7 @@ fn void test_set_get_repeat() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
@@ -263,7 +263,7 @@ fn void test_timer_again() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -356,7 +356,7 @@ fn void test_multiple_timers() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     MultiTimerContext ctx;
     ctx.timer1_count = 0;

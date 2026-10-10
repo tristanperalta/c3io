@@ -52,7 +52,7 @@ fn void test_resolve_localhost() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -122,7 +122,7 @@ fn void test_resolve_tcp() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -194,7 +194,7 @@ fn void test_addr_to_string() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -243,7 +243,7 @@ fn void test_resolve_invalid_hostname() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;
@@ -311,7 +311,7 @@ fn void test_multiple_addresses() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     TestContext ctx;
     ctx.success = false;

@@ -20,7 +20,7 @@ fn String unterminated_slice(String text, usz len)
 fn void test_udp_bind_with_sliced_ip() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* socket = udp::create(&loop)!!;
     String ip = unterminated_slice("127.0.0.1:7777", 9);
@@ -33,7 +33,7 @@ fn void test_udp_bind_with_sliced_ip() @test
 fn void test_tcp_bind_with_sliced_ip() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     TcpConnection* server = tcp::create(&loop)!!;
     String ip = unterminated_slice("127.0.0.1:7777", 9);
@@ -59,7 +59,7 @@ fn void on_stat(uv::FileStat* stat, int status, void* user_data)
 fn void test_stat_with_sliced_path() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     // "." followed by bytes that would name a missing file if read.
     String path = unterminated_slice(".does-not-exist", 1);

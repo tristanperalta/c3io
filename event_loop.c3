@@ -12,12 +12,14 @@ import c3io::uv;
  when I/O operations complete, timers expire, etc.
 
  Usage:
-   EventLoop? loop = event_loop::create();
-   defer loop.free();
+   EventLoop loop = event_loop::create()!;
 
-   // Add handles (TCP sockets, timers, etc.) to the loop
+   // Each frame: process whatever is ready, without blocking.
+   loop.run_nowait();
 
-   loop.run();  // Blocks until no more events
+   // On exit: close everything, possibly over several frames.
+   while (!loop.shutdown()) { ... next frame ... }
+   loop.free()!;
 *>
 
 // Faults
@@ -211,43 +213,77 @@ fn void close_walk_cb(uv::Handle* handle, void* arg)
 }
 
 <*
- Close all handles in the event loop using uv_walk.
- This is the proper shutdown pattern for libuv:
- 1. Walk all handles and close unclosed ones
- 2. Run event loop to process all close callbacks
+ Cancel an in-flight request (file operation, work item or DNS query).
 
- Call this before close() to ensure clean shutdown.
+ Only a request that hasn't started on libuv's thread pool can be cancelled.
+ Its callback then runs with UV_ECANCELED.
+
+ @param id : "Id returned when the request was started"
+ @return "True if the request was cancelled; false if it is running, finished or unknown"
 *>
-fn void EventLoop.close_all_handles(&self){
-    // Walk through all handles and close them
-    uv::walk(self.loop, &close_walk_cb, null);
-
-    // Run event loop to process all close callbacks
-    // UV_RUN_DEFAULT runs until all handles are closed
-    uv::run(self.loop, uv::RunMode.DEFAULT);
+fn bool EventLoop.cancel(&self, RequestId id)
+{
+    for (PendingRequest* entry = self.pending; entry; entry = entry.next)
+    {
+        if (entry.id == id) return uv::cancel(entry.req) == 0;
+    }
+    return false;
 }
 
 <*
- Close and free the event loop.
- All handles must be closed before calling this.
+ Shut the loop down without blocking.
+
+ Cancels every request that hasn't started, closes every handle that isn't
+ closed yet, then runs at most `max_iterations` non-blocking iterations to
+ deliver the resulting callbacks. Returns true once nothing is left, after
+ which free() succeeds.
+
+ Work already running on the thread pool can't be interrupted. While it runs
+ this returns false; call it again on a later frame until it returns true.
+
+ @param max_iterations : "Upper bound on non-blocking loop iterations"
+ @return "True if the loop has nothing left to do"
+*>
+fn bool EventLoop.shutdown(&self, int max_iterations = 64)
+{
+    for (PendingRequest* entry = self.pending; entry; entry = entry.next)
+    {
+        (void)uv::cancel(entry.req);
+    }
+    uv::walk(self.loop, &close_walk_cb, null);
+    for (int i = 0; i < max_iterations && self.is_alive(); i++)
+    {
+        uv::run(self.loop, uv::RunMode.NOWAIT);
+    }
+    return !self.is_alive();
+}
+
+<*
+ Close the libuv loop. Fails with EVENT_LOOP_STILL_ACTIVE while handles or
+ requests remain; use shutdown() first.
 *>
 fn void? EventLoop.close(&self){
+    if (!self.loop) return;
     int result = uv::loop_close(self.loop);
     if (result != 0)
     {
         c3io::set_last_status(result);
-        if (result == -16) return EVENT_LOOP_STILL_ACTIVE~;  // UV_EBUSY
+        if (result == uv::UV_EBUSY) return EVENT_LOOP_STILL_ACTIVE~;
         return EVENT_LOOP_CLOSE_FAILED~;
     }
 }
 
 <*
- Free the event loop (close and deallocate).
- This is the main cleanup method.
+ Close the loop and release its memory. Fails with EVENT_LOOP_STILL_ACTIVE,
+ and keeps the loop usable, while handles or requests remain; use shutdown()
+ first. Freeing a loop with work still running would let that work's
+ completion touch freed memory.
 *>
-fn void EventLoop.free(&self){
-    (void)self.close();
+fn void? EventLoop.free(&self){
+    if (!self.loop) return;
+    self.close()!;
     alloc::free(self.allocator, self.loop);
+    self.loop = null;
 }
 
 // Thread Pool / Work Queue Support

@@ -49,7 +49,11 @@ fn int main()
     return 1;
   }
   event_loop::EventLoop loop = loop_opt;
-  defer loop.free();
+  defer
+  {
+      while (!loop.shutdown()) {}
+      loop.free()!!;
+  }
 
   c3io::tcp::TcpConnection*? server_opt = c3io::tcp::create(&loop);
   if (catch err = server_opt)

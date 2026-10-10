@@ -169,7 +169,7 @@ fn void test_scandir_basic() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     ScandirTestContext ctx;
     ctx.success = false;
@@ -221,7 +221,7 @@ fn void test_scandir_nonexistent() @test
         assert(false, "Should create event loop");
     }
     EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     ScandirTestContext ctx;
     ctx.success = false;

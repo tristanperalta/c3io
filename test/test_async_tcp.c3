@@ -108,7 +108,7 @@ fn void on_connect(TcpConnection* conn, int status, void* user_data)
 fn void test_tcp_create_and_close() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
     TcpConnection* conn = tcp::create(&loop)!!;
     conn.close();
     @drain(&loop);
@@ -117,7 +117,7 @@ fn void test_tcp_create_and_close() @test
 fn void test_tcp_connect_and_accept() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     Server server;
     SocketAddr server_addr = start_server(&loop, &server);
@@ -139,7 +139,7 @@ fn void test_tcp_connect_and_accept() @test
 fn void test_tcp_connect_refused_closes_connection() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     // A bound but not listening socket reserves a port nobody accepts on.
     TcpConnection* placeholder = tcp::create(&loop)!!;
@@ -170,14 +170,13 @@ fn void test_tcp_connect_that_cannot_start_leaves_loop_closable() @test
     }
     @drain(&loop);
 
-    if (catch err = loop.close()) assert(false, "Loop should close after the failed connect");
-    free(loop.loop);
+    if (catch err = loop.free()) assert(false, "Loop should close after the failed connect");
 }
 
 fn void test_tcp_echo_then_eof() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     Server server = { .read_client = true, .reply = "pong" };
     SocketAddr server_addr = start_server(&loop, &server);
@@ -203,7 +202,7 @@ fn void test_tcp_echo_then_eof() @test
 fn void test_tcp_reset_is_reported_as_error() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     // The server never reads. Closing a socket with unread data makes the
     // kernel reset the connection instead of ending it cleanly.
@@ -247,7 +246,7 @@ fn void on_connect_static(TcpConnection* conn, int status, void* user_data)
 fn void test_tcp_caller_buffer_is_not_freed() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     Server server = { .read_client = true, .reply = "0123456789abcdef" };
     SocketAddr server_addr = start_server(&loop, &server);
@@ -278,7 +277,7 @@ fn void test_tcp_writes_reuse_pooled_memory() @test
     defer tracker.free();
 
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     Server server = { .read_client = true };
     SocketAddr server_addr = start_server(&loop, &server);
@@ -306,7 +305,7 @@ fn void test_tcp_writes_reuse_pooled_memory() @test
 fn void test_tcp_options() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
     TcpConnection* conn = tcp::create(&loop)!!;
     conn.set_nodelay(true)!!;
     conn.set_keepalive(true, 60)!!;
@@ -317,7 +316,7 @@ fn void test_tcp_options() @test
 fn void test_tcp_ipv6_connect() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     TcpConnection* probe = tcp::create(&loop)!!;
     bool has_ipv6 = @ok(probe.bind(net::addr("::1", 0)!!));

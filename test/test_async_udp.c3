@@ -53,7 +53,7 @@ macro void @drain(EventLoop* loop)
 fn void test_create_close_socket() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
     UdpSocket* socket = udp::create(&loop)!!;
     socket.close();
     @drain(&loop);
@@ -62,7 +62,7 @@ fn void test_create_close_socket() @test
 fn void test_bind_reports_local_address() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
     UdpSocket* socket = udp::create(&loop)!!;
     SocketAddr local = bind_loopback(socket);
     assert(local.is_ipv4());
@@ -80,7 +80,7 @@ fn void on_sent(UdpSocket* socket, int status, void* user_data)
 fn void test_send_receive() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -108,7 +108,7 @@ fn void test_send_receive() @test
 fn void test_multiple_datagrams() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -148,7 +148,7 @@ fn void on_recv_echo(UdpSocket* socket, int status, char[] data, SocketAddr* fro
 fn void test_reply_to_sender_address() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* server = udp::create(&loop)!!;
     SocketAddr server_addr = bind_loopback(server);
@@ -174,7 +174,7 @@ fn void test_reply_to_sender_address() @test
 fn void test_try_send() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -196,7 +196,7 @@ fn void test_try_send() @test
 fn void test_connected_socket() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* server = udp::create(&loop)!!;
     SocketAddr server_addr = bind_loopback(server);
@@ -223,7 +223,7 @@ fn void test_connected_socket() @test
 fn void test_empty_datagram() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -255,7 +255,7 @@ fn char[] alloc_static(UdpSocket* socket, usz suggested_size, void* user_data)
 fn void test_caller_buffer_is_not_freed_and_truncation_is_reported() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -284,7 +284,7 @@ fn void test_sends_reuse_pooled_memory() @test
     defer tracker.free();
 
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     SocketAddr receiver_addr = bind_loopback(receiver);
@@ -311,7 +311,7 @@ fn void test_sends_reuse_pooled_memory() @test
 fn void test_socket_options() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* socket = udp::create(&loop)!!;
     bind_loopback(socket);
@@ -329,7 +329,7 @@ fn void test_socket_options() @test
 fn void test_ipv6_send_receive() @test
 {
     EventLoop loop = event_loop::create()!!;
-    defer loop.free();
+    defer loop.free()!!;
 
     UdpSocket* receiver = udp::create(&loop)!!;
     if (catch receiver.bind(net::addr("::1", 0)!!))

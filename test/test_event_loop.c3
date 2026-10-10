@@ -1,6 +1,10 @@
 module c3io::event_loop_test;
 
+import c3io;
 import c3io::event_loop;
+import c3io::uv;
+import std::thread;
+import std::time;
 import std::io;
 
 <*
@@ -15,7 +19,7 @@ fn void test_event_loop_create_and_free() @test
     }
 
     event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     assert(true, "Event loop created successfully");
 }
@@ -33,7 +37,7 @@ fn void test_event_loop_run_empty() @test
     }
 
     event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     // Run empty loop - should return immediately
     (void)loop.run();
@@ -53,7 +57,7 @@ fn void test_event_loop_is_alive() @test
     }
 
     event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     // Empty loop should not be alive
     assert(!loop.is_alive(), "Empty loop should not be alive");
@@ -71,7 +75,7 @@ fn void test_event_loop_run_modes() @test
     }
 
     event_loop::EventLoop loop = loop_opt;
-    defer loop.free();
+    defer loop.free()!!;
 
     // Run in nowait mode - should return immediately
     bool alive = loop.run_nowait();
@@ -80,4 +84,45 @@ fn void test_event_loop_run_modes() @test
     // Run once - should also return immediately
     alive = loop.run_once();
     assert(!alive, "Empty loop should not be alive after once");
+}
+
+fn void sleep_200ms(void* input, void** output)
+{
+    thread::sleep_ms(200);
+}
+
+fn void on_work_done(void* output, int status, void* user_data)
+{
+    *(int*)user_data = status;
+}
+
+<*
+ shutdown() returns false without blocking while work is running on the
+ thread pool, free() refuses to release the loop meanwhile, and a later
+ shutdown() finishes once the work is done.
+*>
+fn void test_shutdown_does_not_block_on_running_work() @test
+{
+    event_loop::EventLoop loop = event_loop::create()!!;
+
+    int status = 1;
+    event_loop::WorkContext ctx = { .work_fn = &sleep_200ms, .callback = &on_work_done, .user_data = &status };
+    assert(loop.queue_work(&ctx) == 0);
+    thread::sleep_ms(20);  // Let a pool thread pick the work up.
+
+    Clock start = clock::now();
+    assert(!loop.shutdown(), "Running work keeps the loop alive");
+    assert(start.mark().to_ms() < 100, "shutdown must not wait for the work");
+    if (try loop.free()) assert(false, "free() must refuse while work is running");
+    assert(c3io::last_status() == uv::UV_EBUSY);
+
+    int calls;
+    while (!loop.shutdown())
+    {
+        thread::sleep_ms(5);
+        calls++;
+    }
+    assert(calls > 1);
+    assert(status == 0, "Work that had started completes normally");
+    loop.free()!!;
 }

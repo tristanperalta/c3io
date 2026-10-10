@@ -28,14 +28,17 @@ const int OPEN_TRUNC  = 0x0200;  // O_TRUNC
 const int OPEN_APPEND = 0x0400;  // O_APPEND
 
 // Faults
-faultdef FILE_OPEN_FAILED;
-faultdef FILE_READ_FAILED;
-faultdef FILE_WRITE_FAILED;
-faultdef FILE_CLOSE_FAILED;
-faultdef FILE_STAT_FAILED;
-faultdef FILE_TRUNCATE_FAILED;
-faultdef DIR_CREATE_FAILED;
-faultdef DIR_SCAN_FAILED;
+excuse
+{
+    FILE_OPEN_FAILED,
+    FILE_READ_FAILED,
+    FILE_WRITE_FAILED,
+    FILE_CLOSE_FAILED,
+    FILE_STAT_FAILED,
+    FILE_TRUNCATE_FAILED,
+    DIR_CREATE_FAILED,
+    DIR_SCAN_FAILED,
+}
 
 <*
  Verify at startup that the fixed uv::Fs opaque buffer is large enough for the

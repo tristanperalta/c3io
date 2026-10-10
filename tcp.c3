@@ -32,11 +32,14 @@ import async::event_loop;
 *>
 
 // Faults
-faultdef TCP_INIT_FAILED;
-faultdef TCP_CONNECT_FAILED;
-faultdef TCP_READ_FAILED;
-faultdef TCP_WRITE_FAILED;
-faultdef TCP_ADDR_PARSE_FAILED;
+excuse
+{
+    TCP_INIT_FAILED,
+    TCP_CONNECT_FAILED,
+    TCP_READ_FAILED,
+    TCP_WRITE_FAILED,
+    TCP_ADDR_PARSE_FAILED,
+}
 
 <*
  TCP connection state.

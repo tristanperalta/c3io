@@ -24,7 +24,7 @@ import async::event_loop;
 *>
 
 // Faults
-faultdef DNS_RESOLVE_FAILED;
+excuse DNS_RESOLVE_FAILED;
 
 <*
  DNS Resolver

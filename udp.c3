@@ -21,10 +21,13 @@ import async::event_loop;
 *>
 
 // Faults
-faultdef UDP_INIT_FAILED;
-faultdef UDP_BIND_FAILED;
-faultdef UDP_SEND_FAILED;
-faultdef UDP_RECV_FAILED;
+excuse
+{
+    UDP_INIT_FAILED,
+    UDP_BIND_FAILED,
+    UDP_SEND_FAILED,
+    UDP_RECV_FAILED,
+}
 
 // Callback types
 alias SendCallback = fn void(UdpSocket* socket, int status, void* user_data);

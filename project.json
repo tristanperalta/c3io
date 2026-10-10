@@ -4,7 +4,7 @@
     "Tristan Peralta <tristan@peralta.ph>",
     "Claude Code <noreply@anthropic.com>"
   ],
-  "version": "0.2.0",
+  "version": "0.2.1",
   "warnings": ["no-unused"],
   "sources": ["dns.c3", "event_loop.c3", "file.c3", "tcp.c3", "timer.c3", "udp.c3", "uv.c3i", "work.c3"],
   "test-sources": ["test/**"],

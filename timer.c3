@@ -20,8 +20,11 @@ import async::event_loop;
 *>
 
 // Faults
-faultdef TIMER_INIT_FAILED;
-faultdef TIMER_START_FAILED;
+excuse
+{
+    TIMER_INIT_FAILED,
+    TIMER_START_FAILED,
+}
 
 // Callback types
 alias TimeoutCallback = fn void(Timer* timer, void* user_data);

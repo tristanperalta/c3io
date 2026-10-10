@@ -21,10 +21,13 @@ import std::io;
 *>
 
 // Faults
-faultdef EVENT_LOOP_INIT_FAILED;
-faultdef EVENT_LOOP_RUN_FAILED;
-faultdef EVENT_LOOP_CLOSE_FAILED;
-faultdef EVENT_LOOP_STILL_ACTIVE;
+excuse
+{
+    EVENT_LOOP_INIT_FAILED,
+    EVENT_LOOP_RUN_FAILED,
+    EVENT_LOOP_CLOSE_FAILED,
+    EVENT_LOOP_STILL_ACTIVE,
+}
 
 <*
  Event loop wrapper.
@@ -69,7 +72,7 @@ fn void? EventLoop.run(&self){
  Returns true if there are still active handles, false otherwise.
 *>
 fn bool EventLoop.run_nowait(&self){
-    int result = uv::run(self.loop, uv::RunMode.NOWAIT);
+    uv::run(self.loop, uv::RunMode.NOWAIT);
     return uv::loop_alive(self.loop) != 0;
 }
 

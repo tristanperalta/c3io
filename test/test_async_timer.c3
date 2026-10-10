@@ -1,7 +1,7 @@
-module async::timer::test;
+module c3io::timer::test;
 
-import async::timer;
-import async::event_loop;
+import c3io::timer;
+import c3io::event_loop;
 import std::io;
 
 // Test result tracking
@@ -17,7 +17,7 @@ struct TestContext
 // One-shot Timer Tests
 // ============================================================================
 
-fn void on_oneshot_timer(async::timer::Timer* timer, void* user_data)
+fn void on_oneshot_timer(c3io::timer::Timer* timer, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.call_count++;
@@ -42,15 +42,15 @@ fn void test_oneshot_timer() @test
     ctx.loop = &loop;
 
     // Create timer
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Start one-shot timer (100ms, no repeat)
-    timer.start(100, 0, &on_oneshot_timer, &ctx);
+    timer.start(100, 0, &on_oneshot_timer, &ctx)!!;
 
     // Run event loop until timer fires
     while (!ctx.completed)
@@ -75,7 +75,7 @@ fn void test_oneshot_timer() @test
 // Repeating Timer Tests
 // ============================================================================
 
-fn void on_repeat_timer(async::timer::Timer* timer, void* user_data)
+fn void on_repeat_timer(c3io::timer::Timer* timer, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.call_count++;
@@ -105,15 +105,15 @@ fn void test_repeating_timer() @test
     ctx.call_count = 0;
     ctx.loop = &loop;
 
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Start repeating timer (50ms initial, 50ms repeat)
-    timer.start(50, 50, &on_repeat_timer, &ctx);
+    timer.start(50, 50, &on_repeat_timer, &ctx)!!;
 
     // Run event loop until we get 3 calls
     while (!ctx.completed)
@@ -138,7 +138,7 @@ fn void test_repeating_timer() @test
 // Stop Timer Tests
 // ============================================================================
 
-fn void on_should_not_fire(async::timer::Timer* timer, void* user_data)
+fn void on_should_not_fire(c3io::timer::Timer* timer, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.call_count++;
@@ -161,15 +161,15 @@ fn void test_stop_timer() @test
     ctx.call_count = 0;
     ctx.loop = &loop;
 
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Start timer
-    timer.start(100, 0, &on_should_not_fire, &ctx);
+    timer.start(100, 0, &on_should_not_fire, &ctx)!!;
 
     // Immediately stop it
     timer.stop();
@@ -207,12 +207,12 @@ fn void test_set_get_repeat() @test
     EventLoop loop = loop_opt;
     defer loop.free();
 
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Set repeat interval
     timer.set_repeat(500);
@@ -236,7 +236,7 @@ fn void test_set_get_repeat() @test
 // Timer Again Tests
 // ============================================================================
 
-fn void on_again_timer(async::timer::Timer* timer, void* user_data)
+fn void on_again_timer(c3io::timer::Timer* timer, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.call_count++;
@@ -271,18 +271,18 @@ fn void test_timer_again() @test
     ctx.call_count = 0;
     ctx.loop = &loop;
 
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         assert(false, "Should create timer");
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Set repeat interval
     timer.set_repeat(50);
 
     // Start with same repeat value
-    timer.start(50, 50, &on_again_timer, &ctx);
+    timer.start(50, 50, &on_again_timer, &ctx)!!;
 
     // Run until first call
     while (ctx.call_count < 1)
@@ -324,7 +324,7 @@ struct MultiTimerContext
     event_loop::EventLoop* loop;
 }
 
-fn void on_multi_timer1(async::timer::Timer* timer, void* user_data)
+fn void on_multi_timer1(c3io::timer::Timer* timer, void* user_data)
 {
     MultiTimerContext* ctx = (MultiTimerContext*)user_data;
     ctx.timer1_count++;
@@ -336,7 +336,7 @@ fn void on_multi_timer1(async::timer::Timer* timer, void* user_data)
     }
 }
 
-fn void on_multi_timer2(async::timer::Timer* timer, void* user_data)
+fn void on_multi_timer2(c3io::timer::Timer* timer, void* user_data)
 {
     MultiTimerContext* ctx = (MultiTimerContext*)user_data;
     ctx.timer2_count++;
@@ -365,23 +365,23 @@ fn void test_multiple_timers() @test
     ctx.loop = &loop;
 
     // Create two timers
-    async::timer::Timer*? timer1_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer1_opt = c3io::timer::create(&loop);
     if (catch err = timer1_opt)
     {
         assert(false, "Should create timer1");
     }
-    async::timer::Timer* timer1 = timer1_opt;
+    c3io::timer::Timer* timer1 = timer1_opt;
 
-    async::timer::Timer*? timer2_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer2_opt = c3io::timer::create(&loop);
     if (catch err = timer2_opt)
     {
         assert(false, "Should create timer2");
     }
-    async::timer::Timer* timer2 = timer2_opt;
+    c3io::timer::Timer* timer2 = timer2_opt;
 
     // Start both timers with different intervals
-    timer1.start(50, 50, &on_multi_timer1, &ctx);
-    timer2.start(75, 75, &on_multi_timer2, &ctx);
+    timer1.start(50, 50, &on_multi_timer1, &ctx)!!;
+    timer2.start(75, 75, &on_multi_timer2, &ctx)!!;
 
     // Run until both have fired at least twice
     while (!ctx.completed)

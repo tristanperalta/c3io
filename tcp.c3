@@ -1,8 +1,8 @@
-module async::tcp;
+module c3io::tcp;
 
-import uv;
-import std::io;
-import async::event_loop;
+import c3io;
+import c3io::uv;
+import c3io::event_loop;
 
 <*
  Async TCP Socket Wrapper for libuv
@@ -10,15 +10,13 @@ import async::event_loop;
  Provides async TCP connection and I/O operations using libuv.
 
  Usage:
-  fn void on_connect(async::tcp::TcpConnection* conn, int status, void* user_data)
+  fn void on_connect(c3io::tcp::TcpConnection* conn, int status, void* user_data)
   {
     if (status != 0)
     {
-      io::eprintfn("Connection failed");
       conn.close();
       return;
     }
-    io::printfn("Connected successfully!");
     // Do work with the connection...
     conn.start_read(&on_alloc, &on_read);
     conn.write(data, &on_write);
@@ -27,7 +25,7 @@ import async::event_loop;
     conn.close();
   }
   // initialize the loop
-  TcpConnection*? conn = async::tcp::connect(loop, "127.0.0.1", 8080, &on_connect)!!;
+  TcpConnection*? conn = c3io::tcp::connect(loop, "127.0.0.1", 8080, &on_connect)!!;
   loop.run()!!;
 *>
 
@@ -95,14 +93,14 @@ struct WriteContext
 *>
 fn TcpConnection*? create(event_loop::EventLoop* loop){
     // Allocate TCP handle
-    uv::Tcp* handle = uv::alloc_handle(uv::Tcp, uv::HandleType.TCP);
+    uv::Tcp* handle = c3io::alloc_handle(uv::Tcp, uv::HandleType.TCP);
 
     // Initialize TCP handle
     int result = uv::tcp_init(loop.loop, handle);
     if (result != 0)
     {
         free(handle);
-        io::printfn("Failed to initialize TCP handle: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_INIT_FAILED~;
     }
 
@@ -162,12 +160,12 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
     {
         free(conn.handle);
         free(conn);
-        io::printfn("Failed to parse address %s:%d: %s", host, port, (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_ADDR_PARSE_FAILED~;
     }
 
     // Allocate connect request and context (freed in callback)
-    uv::Connect* req = uv::alloc_req(uv::Connect, uv::ReqType.CONNECT);
+    uv::Connect* req = c3io::alloc_req(uv::Connect, uv::ReqType.CONNECT);
     ConnectContext* ctx = mem::new(ConnectContext);
     ctx.conn = conn;
     ctx.cb = callback;
@@ -185,7 +183,7 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
         free(ctx);
         free(conn.handle);
         free(conn);
-        io::printfn("Failed to initiate connect: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_CONNECT_FAILED~;
     }
 
@@ -261,7 +259,6 @@ fn void on_read_internal(uv::Stream* stream, sz nread, uv::Buf* buf)
     else if (nread < 0)
     {
         // Error - pass empty array (user should check connection state)
-        io::printfn("Read error: %s", (ZString)uv::strerror((int)nread));
         char[] empty = {};
         if (conn.read_cb != null)
         {
@@ -293,7 +290,7 @@ fn void? TcpConnection.start_read(&self, AllocCallback alloc_cb,
 
     int result = uv::read_start((uv::Stream*)self.handle,
                                 &on_alloc_internal, &on_read_internal);
-    uv::@uv_check(result, "Failed to start reading", TCP_READ_FAILED)!;
+    c3io::@check(result, TCP_READ_FAILED)!;
 }
 
 <*
@@ -301,7 +298,7 @@ fn void? TcpConnection.start_read(&self, AllocCallback alloc_cb,
 *>
 fn void? TcpConnection.stop_read(&self){
     int result = uv::read_stop((uv::Stream*)self.handle);
-    uv::@uv_check(result, "Failed to stop reading", TCP_READ_FAILED)!;
+    c3io::@check(result, TCP_READ_FAILED)!;
 }
 
 <*
@@ -337,7 +334,7 @@ fn void on_write_internal(uv::Write* req, int status)
 fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
                              void* user_data = null){
     // Allocate write request and context (freed in callback)
-    uv::Write* req = uv::alloc_req(uv::Write, uv::ReqType.WRITE);
+    uv::Write* req = c3io::alloc_req(uv::Write, uv::ReqType.WRITE);
     WriteContext* ctx = mem::new(WriteContext);
     ctx.conn = self;
     ctx.cb = callback;
@@ -361,7 +358,7 @@ fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
         free(ctx.bufs);
         free(ctx);
         free(req);
-        io::printfn("Failed to write: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_WRITE_FAILED~;
     }
 }
@@ -401,7 +398,7 @@ fn void TcpConnection.close(&self){
 *>
 fn void? TcpConnection.set_nodelay(&self, bool enable){
     int result = uv::tcp_nodelay(self.handle, enable ? 1 : 0);
-    uv::@uv_check(result, "Failed to set TCP_NODELAY", TCP_INIT_FAILED)!;
+    c3io::@check(result, TCP_INIT_FAILED)!;
 }
 
 <*
@@ -412,7 +409,7 @@ fn void? TcpConnection.set_nodelay(&self, bool enable){
 *>
 fn void? TcpConnection.set_keepalive(&self, bool enable, uint delay = 60){
     int result = uv::tcp_keepalive(self.handle, enable ? 1 : 0, delay);
-    uv::@uv_check(result, "Failed to set TCP keepalive", TCP_INIT_FAILED)!;
+    c3io::@check(result, TCP_INIT_FAILED)!;
 }
 
 // ============================================================================
@@ -429,7 +426,6 @@ fn void on_connection_internal(uv::Stream* server, int status)
 
     if (status < 0)
     {
-        io::eprintfn("Connection error: %s", (ZString)uv::strerror(status));
         return;
     }
 
@@ -437,7 +433,6 @@ fn void on_connection_internal(uv::Stream* server, int status)
     TcpConnection*? client_opt = create(server_conn.loop);
     if (catch err = client_opt)
     {
-        io::eprintfn("Failed to create client connection");
         return;
     }
     TcpConnection* client = client_opt;
@@ -446,7 +441,6 @@ fn void on_connection_internal(uv::Stream* server, int status)
     int result = uv::accept(server, (uv::Stream*)client.handle);
     if (result != 0)
     {
-        io::eprintfn("Failed to accept connection: %s", (ZString)uv::strerror(result));
         client.close();
         return;
     }
@@ -471,14 +465,14 @@ fn void? TcpConnection.bind(&self, String ip, ushort port){
     int result = uv::ip4_addr(c_ip, port, &addr);
     if (result != 0)
     {
-        io::printfn("Failed to parse bind address %s:%d: %s", ip, port, (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_ADDR_PARSE_FAILED~;
     }
 
     result = uv::tcp_bind(self.handle, (uv::Sockaddr*)&addr, 0);
     if (result != 0)
     {
-        io::printfn("Failed to bind to %s:%d: %s", ip, port, (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_INIT_FAILED~;
     }
 }
@@ -497,7 +491,7 @@ fn void? TcpConnection.listen(&self, int backlog, AcceptCallback callback, void*
     int result = uv::listen((uv::Stream*)self.handle, backlog, &on_connection_internal);
     if (result != 0)
     {
-        io::printfn("Failed to listen: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TCP_INIT_FAILED~;
     }
 }

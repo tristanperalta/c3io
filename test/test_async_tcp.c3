@@ -1,7 +1,7 @@
-module async::tcp_test;
+module c3io::tcp_test;
 
-import async::event_loop;
-import async::tcp;
+import c3io::event_loop;
+import c3io::tcp;
 import std::io;
 
 <*
@@ -18,13 +18,13 @@ fn void test_tcp_create_and_close() @test
     event_loop::EventLoop loop = loop_opt;
     defer loop.free();
 
-    async::tcp::TcpConnection*? conn_opt = async::tcp::create(&loop);
+    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::create(&loop);
     if (catch err = conn_opt)
     {
         assert(false, "Should create TCP connection");
     }
 
-    async::tcp::TcpConnection* conn = conn_opt;
+    c3io::tcp::TcpConnection* conn = conn_opt;
 
     conn.close();
     // Note: close() frees the connection automatically, but it's async
@@ -45,7 +45,7 @@ struct LoopbackState
 }
 
 // Client side: the connect completed (success or failure).
-fn void on_loopback_connect(async::tcp::TcpConnection* conn, int status, void* user_data)
+fn void on_loopback_connect(c3io::tcp::TcpConnection* conn, int status, void* user_data)
 {
     LoopbackState* state = user_data;
     state.connected = true;
@@ -54,7 +54,7 @@ fn void on_loopback_connect(async::tcp::TcpConnection* conn, int status, void* u
 }
 
 // Server side: a client was accepted.
-fn void on_loopback_accept(async::tcp::TcpConnection* server, async::tcp::TcpConnection* client, void* user_data)
+fn void on_loopback_accept(c3io::tcp::TcpConnection* server, c3io::tcp::TcpConnection* client, void* user_data)
 {
     LoopbackState* state = user_data;
     state.accepted = true;
@@ -87,12 +87,12 @@ fn void test_tcp_connect_loopback() @test
     ushort port = 47921;
 
     // Start a localhost server.
-    async::tcp::TcpConnection*? server_opt = async::tcp::create(&loop);
+    c3io::tcp::TcpConnection*? server_opt = c3io::tcp::create(&loop);
     if (catch err = server_opt)
     {
         assert(false, "Should create server connection");
     }
-    async::tcp::TcpConnection* server = server_opt;
+    c3io::tcp::TcpConnection* server = server_opt;
 
     if (catch err = server.bind("127.0.0.1", port))
     {
@@ -104,7 +104,7 @@ fn void test_tcp_connect_loopback() @test
     }
 
     // Connect a client to the server.
-    async::tcp::TcpConnection*? conn_opt = async::tcp::connect(
+    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::connect(
         &loop, "127.0.0.1", port, &on_loopback_connect, &state
     );
     if (catch err = conn_opt)
@@ -134,13 +134,13 @@ fn void test_tcp_options() @test
     event_loop::EventLoop loop = loop_opt;
     defer loop.free();
 
-    async::tcp::TcpConnection*? conn_opt = async::tcp::create(&loop);
+    c3io::tcp::TcpConnection*? conn_opt = c3io::tcp::create(&loop);
     if (catch err = conn_opt)
     {
         assert(false, "Should create TCP connection");
     }
 
-    async::tcp::TcpConnection* conn = conn_opt;
+    c3io::tcp::TcpConnection* conn = conn_opt;
 
     // Test nodelay
     if (catch err = conn.set_nodelay(true))
@@ -170,14 +170,14 @@ struct ReadResult
     int bytes_received;
 }
 
-fn char[] on_test_alloc(async::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
+fn char[] on_test_alloc(c3io::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
 {
     // Allocate a buffer for reading
     char[] buf = mem::new_array(char, (sz)suggested_size);
     return buf;
 }
 
-fn void on_test_read(async::tcp::TcpConnection* conn, char[] data, void* user_data)
+fn void on_test_read(c3io::tcp::TcpConnection* conn, char[] data, void* user_data)
 {
     ReadResult* result = user_data;
     result.called = true;
@@ -206,7 +206,7 @@ struct WriteResult
     int status;
 }
 
-fn void on_test_write(async::tcp::TcpConnection* conn, int status, void* user_data)
+fn void on_test_write(c3io::tcp::TcpConnection* conn, int status, void* user_data)
 {
     WriteResult* result = user_data;
     result.called = true;

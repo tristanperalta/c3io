@@ -1,8 +1,8 @@
-module async::work;
+module c3io::work;
 
-import async::event_loop;
-import uv;
-import std::io;
+import c3io::event_loop;
+import c3io;
+import c3io::uv;
 
 <*
  Async Work (Thread Pool)

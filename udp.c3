@@ -1,8 +1,8 @@
-module async::udp;
+module c3io::udp;
 
-import uv;
-import std::io;
-import async::event_loop;
+import c3io;
+import c3io::uv;
+import c3io::event_loop;
 
 <*
  Async UDP Socket Wrapper for libuv
@@ -12,7 +12,7 @@ import async::event_loop;
  UDP is connectionless, so you can send/receive without "connecting".
 
  Usage:
-   UdpSocket* socket = async::udp::create(loop);
+   UdpSocket* socket = c3io::udp::create(loop);
    socket.bind("0.0.0.0", 6881);  // Optional - can send without binding
    socket.recv_start(&on_alloc, &on_recv, user_data);
    socket.send(addr, data, &on_send, user_data);
@@ -138,14 +138,14 @@ fn void on_close_internal(uv::Handle* handle)
 *>
 fn UdpSocket*? create(event_loop::EventLoop* loop){
     // Allocate UDP handle
-    uv::Udp* handle = uv::alloc_handle(uv::Udp, uv::HandleType.UDP);
+    uv::Udp* handle = c3io::alloc_handle(uv::Udp, uv::HandleType.UDP);
 
     // Initialize UDP handle
     int result = uv::udp_init(loop.loop, handle);
     if (result != 0)
     {
         free(handle);
-        io::printfn("Failed to initialize UDP handle: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return UDP_INIT_FAILED~;
     }
 
@@ -169,22 +169,12 @@ fn UdpSocket*? create(event_loop::EventLoop* loop){
  @param ip : "IP address to bind to (e.g., 0.0.0.0 for any)"
  @param port : "Port number to bind to"
 *>
-fn void UdpSocket.bind(&self, String ip, int port){
+fn void? UdpSocket.bind(&self, String ip, int port){
     uv::Sockaddr_in addr;
     ZString c_ip = (ZString)ip.ptr;
 
-    int result = uv::ip4_addr(c_ip, port, &addr);
-    if (result != 0)
-    {
-        io::printfn("Failed to parse IP address: %s", (ZString)uv::strerror(result));
-        return;
-    }
-
-    result = uv::udp_bind(self.handle, (uv::Sockaddr*)&addr, uv::UV_UDP_REUSEADDR);
-    if (result != 0)
-    {
-        io::printfn("Failed to bind UDP socket: %s", (ZString)uv::strerror(result));
-    }
+    c3io::@check(uv::ip4_addr(c_ip, port, &addr), UDP_BIND_FAILED)!;
+    c3io::@check(uv::udp_bind(self.handle, (uv::Sockaddr*)&addr, uv::UV_UDP_REUSEADDR), UDP_BIND_FAILED)!;
 }
 
 <*
@@ -204,7 +194,7 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
+    ctx.req = c3io::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Parse destination address
@@ -214,7 +204,6 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
     int result = uv::ip4_addr(c_ip, port, &addr);
     if (result != 0)
     {
-        io::printfn("Failed to parse destination address: %s", (ZString)uv::strerror(result));
         if (callback)
         {
             callback(self, result, user_data);
@@ -237,7 +226,6 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
     if (result < 0)
     {
         // Immediate error
-        io::printfn("Failed to send UDP datagram: %s", (ZString)uv::strerror(result));
         if (callback)
         {
             callback(self, result, user_data);
@@ -269,7 +257,7 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
+    ctx.req = c3io::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Prepare buffer (copy data so it stays valid until send completes)
@@ -285,7 +273,6 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
     if (result < 0)
     {
         // Immediate error
-        io::printfn("Failed to send UDP datagram: %s", (ZString)uv::strerror(result));
         if (callback)
         {
             callback(self, result, user_data);
@@ -307,17 +294,14 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
  @param recv_cb : "Receive callback"
  @param user_data : "User data passed to callbacks"
 *>
-fn void UdpSocket.recv_start(&self, AllocCallback alloc_cb, RecvCallback recv_cb,
+fn void? UdpSocket.recv_start(&self, AllocCallback alloc_cb, RecvCallback recv_cb,
                              void* user_data){
     self.alloc_cb = alloc_cb;
     self.recv_cb = recv_cb;
     self.recv_user_data = user_data;
 
     int result = uv::udp_recv_start(self.handle, &on_alloc_internal, &on_recv_internal);
-    if (result != 0)
-    {
-        io::printfn("Failed to start receiving UDP datagrams: %s", (ZString)uv::strerror(result));
-    }
+    c3io::@check(result, UDP_RECV_FAILED)!;
 }
 
 <*

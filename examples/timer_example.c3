@@ -1,8 +1,8 @@
-import async::event_loop;
-import async::timer;
+import c3io::event_loop;
+import c3io::timer;
 import std::io;
 
-fn void on_timer(async::timer::Timer* timer, void* user_data)
+fn void on_timer(c3io::timer::Timer* timer, void* user_data)
 {
     io::printfn("Timer fired!");
     timer.stop();
@@ -22,16 +22,16 @@ fn int main()
     defer loop.free();
 
     // Create a timer
-    async::timer::Timer*? timer_opt = async::timer::create(&loop);
+    c3io::timer::Timer*? timer_opt = c3io::timer::create(&loop);
     if (catch err = timer_opt)
     {
         io::eprintfn("Failed to create timer");
         return 1;
     }
-    async::timer::Timer* timer = timer_opt;
+    c3io::timer::Timer* timer = timer_opt;
 
     // Start timer (1 second, non-repeating)
-    timer.start(1000, 0, &on_timer, null);
+    timer.start(1000, 0, &on_timer, null)!!;
 
     // Run event loop until all handles are closed
     loop.run()!!;

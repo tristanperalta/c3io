@@ -1,8 +1,8 @@
-module async::file;
+module c3io::file;
 
-import uv;
-import std::io;
-import async::event_loop;
+import c3io;
+import c3io::uv;
+import c3io::event_loop;
 
 <*
  Async File I/O Wrapper for libuv

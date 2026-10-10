@@ -1,6 +1,6 @@
-module async::event_loop_test;
+module c3io::event_loop_test;
 
-import async::event_loop;
+import c3io::event_loop;
 import std::io;
 
 <*

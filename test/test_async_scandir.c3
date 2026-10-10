@@ -1,8 +1,8 @@
-module async::file::test;
+module c3io::file::test;
 
-import async::file;
-import async::event_loop;
-import uv;
+import c3io::file;
+import c3io::event_loop;
+import c3io::uv;
 import std::io;
 
 // Test result tracking
@@ -22,7 +22,7 @@ struct ScandirTestContext
 // Scandir Tests
 // ============================================================================
 
-fn void on_scandir_verify(async::file::DirEntry[] entries, int status, void* user_data)
+fn void on_scandir_verify(c3io::file::DirEntry[] entries, int status, void* user_data)
 {
     ScandirTestContext* ctx = (ScandirTestContext*)user_data;
     ctx.completed = true;
@@ -73,7 +73,7 @@ fn void on_mkdir_subdir(int status, void* user_data)
     }
 
     // Now scan the directory
-    async::file::scandir(ctx.loop, "/tmp/test_scandir", &on_scandir_verify, user_data);
+    c3io::file::scandir(ctx.loop, "/tmp/test_scandir", &on_scandir_verify, user_data);
 }
 
 fn void on_close_file2(int status, void* user_data)
@@ -89,10 +89,10 @@ fn void on_close_file2(int status, void* user_data)
     }
 
     // Create subdirectory
-    async::file::mkdir(ctx.loop, "/tmp/test_scandir/test_subdir", 493, &on_mkdir_subdir, user_data);
+    c3io::file::mkdir(ctx.loop, "/tmp/test_scandir/test_subdir", 493, &on_mkdir_subdir, user_data);
 }
 
-fn void on_open_file2(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_file2(c3io::file::FileHandle* file, int status, void* user_data)
 {
     ScandirTestContext* ctx = (ScandirTestContext*)user_data;
 
@@ -121,12 +121,12 @@ fn void on_close_file1(int status, void* user_data)
     }
 
     // Create second test file
-    async::file::open(ctx.loop, "/tmp/test_scandir/test_file2.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE,
+    c3io::file::open(ctx.loop, "/tmp/test_scandir/test_file2.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
                      420, &on_open_file2, user_data);
 }
 
-fn void on_open_file1(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_file1(c3io::file::FileHandle* file, int status, void* user_data)
 {
     ScandirTestContext* ctx = (ScandirTestContext*)user_data;
 
@@ -156,8 +156,8 @@ fn void on_mkdir_base(int status, void* user_data)
     }
 
     // Create first test file
-    async::file::open(ctx.loop, "/tmp/test_scandir/test_file1.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE,
+    c3io::file::open(ctx.loop, "/tmp/test_scandir/test_file1.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
                      420, &on_open_file1, user_data);
 }
 
@@ -186,7 +186,7 @@ fn void test_scandir_basic() @test
     //   └── test_subdir/
 
     // Create base directory first (will trigger the rest of the setup)
-    async::file::mkdir(&loop, "/tmp/test_scandir", 493, &on_mkdir_base, &ctx);
+    c3io::file::mkdir(&loop, "/tmp/test_scandir", 493, &on_mkdir_base, &ctx);
 
     while (!ctx.completed)
     {
@@ -204,7 +204,7 @@ fn void test_scandir_basic() @test
 // Error Handling Tests
 // ============================================================================
 
-fn void on_scandir_nonexistent(async::file::DirEntry[] entries, int status, void* user_data)
+fn void on_scandir_nonexistent(c3io::file::DirEntry[] entries, int status, void* user_data)
 {
     ScandirTestContext* ctx = (ScandirTestContext*)user_data;
     ctx.completed = true;
@@ -229,7 +229,7 @@ fn void test_scandir_nonexistent() @test
     ctx.loop = &loop;
 
     // Try to scan non-existent directory
-    async::file::scandir(&loop, "/nonexistent/directory/path", &on_scandir_nonexistent, &ctx);
+    c3io::file::scandir(&loop, "/nonexistent/directory/path", &on_scandir_nonexistent, &ctx);
 
     while (!ctx.completed)
     {

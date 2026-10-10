@@ -1,8 +1,8 @@
-module async::udp::test;
+module c3io::udp::test;
 
-import async::udp;
-import async::event_loop;
-import uv;
+import c3io::udp;
+import c3io::event_loop;
+import c3io::uv;
 import std::io;
 
 // Test result tracking
@@ -13,8 +13,8 @@ struct TestContext
     int send_count;
     int recv_count;
     event_loop::EventLoop* loop;
-    async::udp::UdpSocket* sender;
-    async::udp::UdpSocket* receiver;
+    c3io::udp::UdpSocket* sender;
+    c3io::udp::UdpSocket* receiver;
     char[] received_data;
     uv::Sockaddr* sender_addr;
 }
@@ -34,12 +34,12 @@ fn void test_create_close_socket() @test
     defer loop.free();
 
     // Create UDP socket
-    async::udp::UdpSocket*? socket_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? socket_opt = c3io::udp::create(&loop);
     if (catch err = socket_opt)
     {
         assert(false, "Should create UDP socket");
     }
-    async::udp::UdpSocket* socket = socket_opt;
+    c3io::udp::UdpSocket* socket = socket_opt;
 
     // Close socket
     socket.close();
@@ -65,15 +65,15 @@ fn void test_bind_socket() @test
     EventLoop loop = loop_opt;
     defer loop.free();
 
-    async::udp::UdpSocket*? socket_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? socket_opt = c3io::udp::create(&loop);
     if (catch err = socket_opt)
     {
         assert(false, "Should create UDP socket");
     }
-    async::udp::UdpSocket* socket = socket_opt;
+    c3io::udp::UdpSocket* socket = socket_opt;
 
     // Bind to any address on a random port (0 = let OS choose)
-    socket.bind("0.0.0.0", 0);
+    socket.bind("0.0.0.0", 0)!!;
 
     // Close socket
     socket.close();
@@ -89,7 +89,7 @@ fn void test_bind_socket() @test
 // Send/Receive Tests
 // ============================================================================
 
-fn void on_recv_echo(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
+fn void on_recv_echo(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
 
@@ -126,12 +126,12 @@ fn void on_recv_echo(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* a
     }
 }
 
-fn char[] on_alloc_default(async::udp::UdpSocket* socket, usz suggested_size, void* user_data)
+fn char[] on_alloc_default(c3io::udp::UdpSocket* socket, usz suggested_size, void* user_data)
 {
     return mem::new_array(char, (sz)suggested_size);
 }
 
-fn void on_send_complete(async::udp::UdpSocket* socket, int status, void* user_data)
+fn void on_send_complete(c3io::udp::UdpSocket* socket, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.send_count++;
@@ -163,27 +163,27 @@ fn void test_send_receive() @test
     ctx.received_data = {};
 
     // Create receiver socket
-    async::udp::UdpSocket*? receiver_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
     }
-    async::udp::UdpSocket* receiver = receiver_opt;
+    c3io::udp::UdpSocket* receiver = receiver_opt;
     ctx.receiver = receiver;
 
     // Bind receiver to localhost on port 9001
-    receiver.bind("127.0.0.1", 9001);
+    receiver.bind("127.0.0.1", 9001)!!;
 
     // Start receiving
-    receiver.recv_start(&on_alloc_default, &on_recv_echo, &ctx);
+    receiver.recv_start(&on_alloc_default, &on_recv_echo, &ctx)!!;
 
     // Create sender socket
-    async::udp::UdpSocket*? sender_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
     }
-    async::udp::UdpSocket* sender = sender_opt;
+    c3io::udp::UdpSocket* sender = sender_opt;
     ctx.sender = sender;
 
     // Send datagram to receiver
@@ -231,7 +231,7 @@ struct MultiContext
     event_loop::EventLoop* loop;
 }
 
-fn void on_recv_multi(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
+fn void on_recv_multi(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
 {
     MultiContext* ctx = (MultiContext*)user_data;
 
@@ -246,7 +246,7 @@ fn void on_recv_multi(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* 
     }
 }
 
-fn void on_send_multi(async::udp::UdpSocket* socket, int status, void* user_data)
+fn void on_send_multi(c3io::udp::UdpSocket* socket, int status, void* user_data)
 {
     MultiContext* ctx = (MultiContext*)user_data;
 
@@ -274,23 +274,23 @@ fn void test_multiple_datagrams() @test
     ctx.loop = &loop;
 
     // Create receiver
-    async::udp::UdpSocket*? receiver_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
     }
-    async::udp::UdpSocket* receiver = receiver_opt;
+    c3io::udp::UdpSocket* receiver = receiver_opt;
 
-    receiver.bind("127.0.0.1", 9002);
-    receiver.recv_start(&on_alloc_default, &on_recv_multi, &ctx);
+    receiver.bind("127.0.0.1", 9002)!!;
+    receiver.recv_start(&on_alloc_default, &on_recv_multi, &ctx)!!;
 
     // Create sender
-    async::udp::UdpSocket*? sender_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
     }
-    async::udp::UdpSocket* sender = sender_opt;
+    c3io::udp::UdpSocket* sender = sender_opt;
 
     // Send multiple datagrams
     for (int i = 0; i < ctx.messages_to_send; i++)
@@ -333,7 +333,7 @@ struct SendToContext
     event_loop::EventLoop* loop;
 }
 
-fn void on_recv_capture_addr(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
+fn void on_recv_capture_addr(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
 {
     SendToContext* ctx = (SendToContext*)user_data;
 
@@ -354,7 +354,7 @@ fn void on_recv_capture_addr(async::udp::UdpSocket* socket, char[] data, uv::Soc
     }
 }
 
-fn void on_recv_reply(async::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
+fn void on_recv_reply(c3io::udp::UdpSocket* socket, char[] data, uv::Sockaddr* addr, void* user_data)
 {
     SendToContext* ctx = (SendToContext*)user_data;
 
@@ -398,26 +398,26 @@ fn void test_send_to_addr() @test
     ctx.loop = &loop;
 
     // Create receiver (will reply to sender)
-    async::udp::UdpSocket*? receiver_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? receiver_opt = c3io::udp::create(&loop);
     if (catch err = receiver_opt)
     {
         assert(false, "Should create receiver socket");
     }
-    async::udp::UdpSocket* receiver = receiver_opt;
+    c3io::udp::UdpSocket* receiver = receiver_opt;
 
-    receiver.bind("127.0.0.1", 9003);
-    receiver.recv_start(&on_alloc_default, &on_recv_capture_addr, &ctx);
+    receiver.bind("127.0.0.1", 9003)!!;
+    receiver.recv_start(&on_alloc_default, &on_recv_capture_addr, &ctx)!!;
 
     // Create sender (will receive reply)
-    async::udp::UdpSocket*? sender_opt = async::udp::create(&loop);
+    c3io::udp::UdpSocket*? sender_opt = c3io::udp::create(&loop);
     if (catch err = sender_opt)
     {
         assert(false, "Should create sender socket");
     }
-    async::udp::UdpSocket* sender = sender_opt;
+    c3io::udp::UdpSocket* sender = sender_opt;
 
-    sender.bind("127.0.0.1", 9004);
-    sender.recv_start(&on_alloc_default, &on_recv_reply, &ctx);
+    sender.bind("127.0.0.1", 9004)!!;
+    sender.recv_start(&on_alloc_default, &on_recv_reply, &ctx)!!;
 
     // Send initial message
     String initial = "Hello";

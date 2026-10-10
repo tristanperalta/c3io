@@ -1,7 +1,7 @@
-module async::event_loop;
+module c3io::event_loop;
 
-import uv;
-import std::io;
+import c3io;
+import c3io::uv;
 
 <*
  Event Loop Wrapper for libuv
@@ -51,7 +51,7 @@ fn EventLoop? create(){
     if (result != 0)
     {
         free(loop);
-        io::printfn("Failed to initialize event loop: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return EVENT_LOOP_INIT_FAILED~;
     }
 
@@ -64,7 +64,7 @@ fn EventLoop? create(){
 *>
 fn void? EventLoop.run(&self){
     int result = uv::run(self.loop, uv::RunMode.DEFAULT);
-    uv::@uv_check(result, "Event loop run failed", EVENT_LOOP_RUN_FAILED)!;
+    c3io::@check(result, EVENT_LOOP_RUN_FAILED)!;
 }
 
 <*
@@ -159,11 +159,8 @@ fn void? EventLoop.close(&self){
     int result = uv::loop_close(self.loop);
     if (result != 0)
     {
-        io::printfn("Failed to close event loop: %s", (ZString)uv::strerror(result));
-        if (result == -16)  // UV_EBUSY
-        {
-            return EVENT_LOOP_STILL_ACTIVE~;
-        }
+        c3io::set_last_status(result);
+        if (result == -16) return EVENT_LOOP_STILL_ACTIVE~;  // UV_EBUSY
         return EVENT_LOOP_CLOSE_FAILED~;
     }
 }
@@ -173,11 +170,7 @@ fn void? EventLoop.close(&self){
  This is the main cleanup method.
 *>
 fn void EventLoop.free(&self){
-    // Try to close the loop
-    if (catch err = self.close())
-    {
-        io::printfn("Warning: Error closing event loop during free: %s", err);
-    }
+    (void)self.close();
 
     // Free the memory
     free(self.loop);
@@ -267,7 +260,6 @@ fn int EventLoop.queue_work(&self, WorkContext* ctx){
 
     if (result != 0)
     {
-        io::printfn("Failed to queue work: %s", (ZString)uv::strerror(result));
         free(ctx.work_req);
         ctx.work_req = null;
         return result;

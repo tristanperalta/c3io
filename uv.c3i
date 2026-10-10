@@ -1,17 +1,8 @@
-// uv.c3i
-// C3 FFI bindings for libuv
-// https://libuv.org/
-// Created for libtorrent-c3 project
-
-module uv;
-
-import std::io;
+module c3io::uv;
 
 <*
- libuv - Cross-platform asynchronous I/O library
-
- This file provides C FFI bindings for libuv, focusing on the subset
- needed for async TCP connections in BitTorrent peer-to-peer protocol.
+ C3 FFI bindings for libuv (https://libuv.org/), covering the subset c3io
+ wraps.
 
  Core concepts:
  - Event loop: uv_loop_t - the central event dispatcher
@@ -42,9 +33,9 @@ alias GetAddrInfo = void; // uv_getaddrinfo_t
 alias Work = void;        // uv_work_t (thread pool work request)
 
 // Filesystem request (uv_fs_t) needs inline storage: each fs Context struct in
-// async::file embeds this as its first field and recovers the context via a cast
+// c3io::file embeds this as its first field and recovers the context via a cast
 // on the request pointer, so the size must be fixed. uv_fs_t is 440 bytes on
-// Linux x64 today; 512 leaves headroom. async::file::check_fs_size() verifies it
+// Linux x64 today; 512 leaves headroom. c3io::file::check_fs_size() verifies it
 // fits at startup (this is an interface file, which can't hold function bodies).
 const usz FS_OPAQUE_SIZE = 512;
 
@@ -367,22 +358,6 @@ extern fn ulong hrtime() @cname("uv_hrtime");
 // ============================================================================
 // Handle Functions
 // ============================================================================
-
-<*
- Allocate memory for a handle of the given type.
-
- The allocated handle must be initialized with the appropriate init function
- (e.g., tcp_init for TCP handles).
-
- @param $Type : "Type of handle to allocate"
- @param type : "Handle type enum value"
- @return "Pointer to allocated handle"
-*>
-macro void* alloc_handle($Type, type)
-{
-	usz size = handle_size(type);
-	return mem::calloc((sz)size);
-}
 
 <*
  Get the size of a handle type.
@@ -775,40 +750,6 @@ const int AI_PASSIVE = 1;       // Socket address for bind()
 const int AI_CANONNAME = 2;     // Fill in ai_canonname
 const int AI_NUMERICHOST = 4;   // Prevent hostname resolution
 const int AI_NUMERICSERV = 1024; // Service is numeric port
-
-// ============================================================================
-// Utility Macros
-// ============================================================================
-
-<*
- Check a libuv result code and return a fault if it's an error.
-
- @param result : "Result code from libuv function"
- @param message : "Error message to print"
- @param fault_type : "Fault type to return"
-*>
-macro @uv_check(result, message, fault_type)
-{
-    if (result != 0)
-    {
-        io::printfn("%s: %s", message, (ZString)strerror(result));
-        return fault_type~;
-    }
-}
-
-<*
- Allocate memory for a request type.
- Queries libuv for the actual size needed.
-
- @param $ReqType : "Request type to allocate (for casting)"
- @param req_type : "ReqType enum value"
- @return "Pointer to allocated request"
-*>
-macro alloc_req($ReqType, req_type)
-{
-    usz size = req_size(req_type);
-    return ($ReqType*)mem::new_array(char, (sz)size);
-}
 
 // ============================================================================
 // Filesystem Functions

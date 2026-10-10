@@ -1,8 +1,8 @@
-module async::dns::test;
+module c3io::dns::test;
 
-import async::dns;
-import async::event_loop;
-import uv;
+import c3io::dns;
+import c3io::event_loop;
+import c3io::uv;
 import std::io;
 
 // Test result tracking
@@ -62,7 +62,7 @@ fn void test_resolve_localhost() @test
     ctx.addr_count = 0;
 
     // Create DNS resolver
-    async::dns::DnsResolver* resolver = async::dns::create(&loop);
+    c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
     defer free(resolver);
 
     // Resolve localhost (should always work)
@@ -80,7 +80,7 @@ fn void test_resolve_localhost() @test
     // Clean up
     if (ctx.result)
     {
-        async::dns::free_result(ctx.result);
+        c3io::dns::free_result(ctx.result);
     }
 }
 
@@ -131,7 +131,7 @@ fn void test_resolve_tcp() @test
     ctx.result = null;
 
     // Create DNS resolver
-    async::dns::DnsResolver* resolver = async::dns::create(&loop);
+    c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
     defer free(resolver);
 
     // Resolve with TCP hint
@@ -147,7 +147,7 @@ fn void test_resolve_tcp() @test
     // Clean up
     if (ctx.result)
     {
-        async::dns::free_result(ctx.result);
+        c3io::dns::free_result(ctx.result);
     }
 }
 
@@ -170,7 +170,7 @@ fn void on_resolve_for_addr_to_string(uv::AddrInfo* result, int status, void* us
     ctx.result = result;
 
     // Convert first address to string
-    String addr_str = async::dns::addr_to_string(result.ai_addr);
+    String addr_str = c3io::dns::addr_to_string(result.ai_addr);
 
     // Should be non-empty for localhost
     ctx.success = (addr_str.len > 0);
@@ -203,7 +203,7 @@ fn void test_addr_to_string() @test
     ctx.result = null;
 
     // Create DNS resolver
-    async::dns::DnsResolver* resolver = async::dns::create(&loop);
+    c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
     defer free(resolver);
 
     resolver.resolve("localhost", "0", &on_resolve_for_addr_to_string, &ctx);
@@ -218,7 +218,7 @@ fn void test_addr_to_string() @test
     // Clean up
     if (ctx.result)
     {
-        async::dns::free_result(ctx.result);
+        c3io::dns::free_result(ctx.result);
     }
 }
 
@@ -252,7 +252,7 @@ fn void test_resolve_invalid_hostname() @test
     ctx.result = null;
 
     // Create DNS resolver
-    async::dns::DnsResolver* resolver = async::dns::create(&loop);
+    c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
     defer free(resolver);
 
     // Try to resolve a clearly invalid hostname
@@ -270,7 +270,7 @@ fn void test_resolve_invalid_hostname() @test
     // Clean up (even though it should be null)
     if (ctx.result)
     {
-        async::dns::free_result(ctx.result);
+        c3io::dns::free_result(ctx.result);
     }
 }
 
@@ -321,7 +321,7 @@ fn void test_multiple_addresses() @test
     ctx.addr_count = 0;
 
     // Create DNS resolver
-    async::dns::DnsResolver* resolver = async::dns::create(&loop);
+    c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
     defer free(resolver);
 
     // Resolve localhost which may have multiple addresses
@@ -338,6 +338,6 @@ fn void test_multiple_addresses() @test
     // Clean up
     if (ctx.result)
     {
-        async::dns::free_result(ctx.result);
+        c3io::dns::free_result(ctx.result);
     }
 }

@@ -1,8 +1,8 @@
-module async::timer;
+module c3io::timer;
 
-import uv;
-import std::io;
-import async::event_loop;
+import c3io;
+import c3io::uv;
+import c3io::event_loop;
 
 <*
  Async Timer Wrapper for libuv
@@ -12,7 +12,7 @@ import async::event_loop;
  Timers can be one-shot or repeating.
 
  Usage:
-   Timer* timer = async::timer::create(loop);
+   Timer* timer = c3io::timer::create(loop);
    timer.start(1000, 0, &on_timeout, user_data);  // Fire once after 1 second
    // Later:
    timer.stop();
@@ -70,14 +70,14 @@ fn void on_close_internal(uv::Handle* handle)
 *>
 fn Timer*? create(event_loop::EventLoop* loop){
     // Allocate timer handle
-    uv::Timer* handle = uv::alloc_handle(uv::Timer, uv::HandleType.TIMER);
+    uv::Timer* handle = c3io::alloc_handle(uv::Timer, uv::HandleType.TIMER);
 
     // Initialize timer handle
     int result = uv::timer_init(loop.loop, handle);
     if (result != 0)
     {
         free(handle);
-        io::printfn("Failed to initialize timer handle: %s", (ZString)uv::strerror(result));
+        c3io::set_last_status(result);
         return TIMER_INIT_FAILED~;
     }
 
@@ -101,16 +101,13 @@ fn Timer*? create(event_loop::EventLoop* loop){
  @param callback : "Callback to invoke on timeout"
  @param user_data : "User data passed to callback"
 *>
-fn void Timer.start(&self, ulong timeout_ms, ulong repeat_ms,
+fn void? Timer.start(&self, ulong timeout_ms, ulong repeat_ms,
                     TimeoutCallback callback, void* user_data){
     self.callback = callback;
     self.user_data = user_data;
 
     int result = uv::timer_start(self.handle, &on_timer_internal, timeout_ms, repeat_ms);
-    if (result != 0)
-    {
-        io::printfn("Failed to start timer: %s", (ZString)uv::strerror(result));
-    }
+    c3io::@check(result, TIMER_START_FAILED)!;
 }
 
 <*

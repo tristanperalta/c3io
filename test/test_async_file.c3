@@ -1,8 +1,8 @@
-module async::file::test;
+module c3io::file::test;
 
-import async::file;
-import async::event_loop;
-import uv;
+import c3io::file;
+import c3io::event_loop;
+import c3io::uv;
 import std::io;
 
 // Test result tracking
@@ -11,7 +11,7 @@ struct TestContext
     bool success;
     bool completed;
     int error_code;
-    async::file::FileHandle* file;
+    c3io::file::FileHandle* file;
     char[] data;
     usz bytes_written;
     usz file_size;
@@ -30,7 +30,7 @@ fn void on_close_success(int status, void* user_data)
     ctx.error_code = status;
 }
 
-fn void on_open_then_close(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_then_close(c3io::file::FileHandle* file, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
 
@@ -62,8 +62,8 @@ fn void test_open_close_file() @test
     ctx.loop = &loop;
 
     // Open a temporary test file
-    async::file::open(&loop, "/tmp/test_async_file_temp.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE,
+    c3io::file::open(&loop, "/tmp/test_async_file_temp.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE,
                      420, &on_open_then_close, &ctx);
 
     // Run event loop until complete
@@ -127,7 +127,7 @@ fn void on_write_then_read(int bytes_written, int status, void* user_data)
     ctx.file.read(0, (usz)bytes_written, &on_read_verify, user_data);
 }
 
-fn void on_open_for_write(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_for_write(c3io::file::FileHandle* file, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
 
@@ -161,8 +161,8 @@ fn void test_write_read_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    async::file::open(&loop, "/tmp/test_async_rw.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE | async::file::OPEN_TRUNC,
+    c3io::file::open(&loop, "/tmp/test_async_rw.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_write, &ctx);
 
     while (!ctx.completed)
@@ -215,7 +215,7 @@ fn void on_close_before_stat(int status, void* user_data)
     }
 
     // Now stat the file
-    async::file::stat(ctx.loop, "/tmp/test_async_stat.txt", &on_stat_verify, user_data);
+    c3io::file::stat(ctx.loop, "/tmp/test_async_stat.txt", &on_stat_verify, user_data);
 }
 
 fn void on_write_for_stat(int bytes_written, int status, void* user_data)
@@ -234,7 +234,7 @@ fn void on_write_for_stat(int bytes_written, int status, void* user_data)
     ctx.file.close(&on_close_before_stat, user_data);
 }
 
-fn void on_open_for_stat(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_for_stat(c3io::file::FileHandle* file, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
 
@@ -267,8 +267,8 @@ fn void test_stat_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    async::file::open(&loop, "/tmp/test_async_stat.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE | async::file::OPEN_TRUNC,
+    c3io::file::open(&loop, "/tmp/test_async_stat.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_stat, &ctx);
 
     while (!ctx.completed)
@@ -292,7 +292,7 @@ fn void on_truncate_verify(int status, void* user_data)
     ctx.error_code = status;
 }
 
-fn void on_open_for_truncate(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_for_truncate(c3io::file::FileHandle* file, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
 
@@ -325,8 +325,8 @@ fn void test_ftruncate_file() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    async::file::open(&loop, "/tmp/test_async_truncate.txt",
-                     async::file::OPEN_RDWR | async::file::OPEN_CREATE | async::file::OPEN_TRUNC,
+    c3io::file::open(&loop, "/tmp/test_async_truncate.txt",
+                     c3io::file::OPEN_RDWR | c3io::file::OPEN_CREATE | c3io::file::OPEN_TRUNC,
                      420, &on_open_for_truncate, &ctx);
 
     while (!ctx.completed)
@@ -373,7 +373,7 @@ fn void test_mkdir() @test
     ctx.completed = false;
     ctx.loop = &loop;
 
-    async::file::mkdir(&loop, "/tmp/test_async_dir", 493, &on_mkdir_verify, &ctx);
+    c3io::file::mkdir(&loop, "/tmp/test_async_dir", 493, &on_mkdir_verify, &ctx);
 
     while (!ctx.completed)
     {
@@ -387,7 +387,7 @@ fn void test_mkdir() @test
 // Error Handling Tests
 // ============================================================================
 
-fn void on_open_nonexistent(async::file::FileHandle* file, int status, void* user_data)
+fn void on_open_nonexistent(c3io::file::FileHandle* file, int status, void* user_data)
 {
     TestContext* ctx = (TestContext*)user_data;
     ctx.completed = true;
@@ -411,8 +411,8 @@ fn void test_open_nonexistent_file() @test
     ctx.loop = &loop;
 
     // Try to open non-existent file without CREATE flag
-    async::file::open(&loop, "/nonexistent/path/file.txt",
-                     async::file::OPEN_RDONLY, 420,
+    c3io::file::open(&loop, "/nonexistent/path/file.txt",
+                     c3io::file::OPEN_RDONLY, 420,
                      &on_open_nonexistent, &ctx);
 
     while (!ctx.completed)

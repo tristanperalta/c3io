@@ -10,13 +10,13 @@ c3io is a standalone library that provides high-level async I/O primitives built
 
 ### High-Level Async Modules
 
-- **Event Loop** (`async::event_loop`) - Core event loop management
-- **TCP** (`async::tcp`) - Async TCP client and server operations
-- **UDP** (`async::udp`) - Async UDP socket operations
-- **Timer** (`async::timer`) - One-shot and periodic timers
-- **DNS** (`async::dns`) - Async DNS resolution
-- **File** (`async::file`) - Async file I/O operations
-- **Work Queue** (`async::work`) - Thread pool for CPU-intensive tasks
+- **Event Loop** (`c3io::event_loop`) - Core event loop management
+- **TCP** (`c3io::tcp`) - Async TCP client and server operations
+- **UDP** (`c3io::udp`) - Async UDP socket operations
+- **Timer** (`c3io::timer`) - One-shot and periodic timers
+- **DNS** (`c3io::dns`) - Async DNS resolution
+- **File** (`c3io::file`) - Async file I/O operations
+- **Work Queue** (`c3io::work`) - Thread pool for CPU-intensive tasks
 
 ### Low-Level Bindings
 

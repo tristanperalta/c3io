@@ -1,8 +1,8 @@
-module async::dns;
+module c3io::dns;
 
-import uv;
-import std::io;
-import async::event_loop;
+import c3io;
+import c3io::uv;
+import c3io::event_loop;
 
 <*
  Async DNS Resolution Wrapper for libuv
@@ -88,7 +88,7 @@ fn void DnsResolver.resolve(&self, String hostname, String service,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
+    ctx.req = c3io::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
     uv::req_set(ctx.req, ctx);
 
     // Prepare hints for UDP socket
@@ -131,7 +131,7 @@ fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = uv::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
+    ctx.req = c3io::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
     uv::req_set(ctx.req, ctx);
 
     // Prepare hints for TCP socket

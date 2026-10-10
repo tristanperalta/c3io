@@ -1,13 +1,13 @@
 import std::io;
-import async::event_loop;
-import async::tcp;
+import c3io::event_loop;
+import c3io::tcp;
 
-fn char[] on_alloc(async::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
+fn char[] on_alloc(c3io::tcp::TcpConnection* conn, usz suggested_size, void* user_data)
 {
   return mem::new_array(char, suggested_size);
 }
 
-fn void on_read(async::tcp::TcpConnection* client, char[] data, void* user_data)
+fn void on_read(c3io::tcp::TcpConnection* client, char[] data, void* user_data)
 {
   if (data.len == 0)
   {
@@ -23,7 +23,7 @@ fn void on_read(async::tcp::TcpConnection* client, char[] data, void* user_data)
   client.write((char[])response.ptr[:response.len], &on_write)!!;
 }
 
-fn void on_write(async::tcp::TcpConnection* client, int status, void* user_data)
+fn void on_write(c3io::tcp::TcpConnection* client, int status, void* user_data)
 {
   if (status != 0)
   {
@@ -32,7 +32,7 @@ fn void on_write(async::tcp::TcpConnection* client, int status, void* user_data)
   client.close();
 }
 
-fn void on_connection(async::tcp::TcpConnection* server, async::tcp::TcpConnection* client, void* user_data)
+fn void on_connection(c3io::tcp::TcpConnection* server, c3io::tcp::TcpConnection* client, void* user_data)
 {
   io::printfn("New client connected!");
 
@@ -51,13 +51,13 @@ fn int main()
   event_loop::EventLoop loop = loop_opt;
   defer loop.free();
 
-  async::tcp::TcpConnection*? server_opt = async::tcp::create(&loop);
+  c3io::tcp::TcpConnection*? server_opt = c3io::tcp::create(&loop);
   if (catch err = server_opt)
   {
     io::eprintfn("Failed to create server");
     return 1;
   }
-  async::tcp::TcpConnection* server = server_opt;
+  c3io::tcp::TcpConnection* server = server_opt;
   defer server.close();
 
   server.bind("0.0.0.0", 8080)!!;

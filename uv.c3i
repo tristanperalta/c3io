@@ -131,18 +131,28 @@ struct Buf
 <*
  Generic socket address (base type).
  Cast to Sockaddr_in or Sockaddr_in6 for specific protocols.
+
+ Darwin and the BSDs start every sockaddr with a length byte and use a
+ one-byte family; Linux and Windows use a two-byte family.
 *>
-struct Sockaddr
+struct Sockaddr @feat(!DARWIN & !BSD)
 {
 	ushort sa_family;  // Address family (AF_INET, AF_INET6, etc.)
 	char[14] sa_data;
 }
 
+struct Sockaddr @feat(DARWIN | BSD)
+{
+	char sa_len;
+	char sa_family;
+	char[14] sa_data;
+}
+
 <*
  IPv4 socket address.
- Used for TCP/UDP connections over IPv4.
+ Port and address are in network byte order.
 *>
-struct Sockaddr_in
+struct Sockaddr_in @feat(!DARWIN & !BSD)
 {
 	ushort sin_family;
 	ushort sin_port;
@@ -150,13 +160,32 @@ struct Sockaddr_in
 	char[8] sin_zero;
 }
 
+struct Sockaddr_in @feat(DARWIN | BSD)
+{
+	char sin_len;
+	char sin_family;
+	ushort sin_port;
+	uint sin_addr;
+	char[8] sin_zero;
+}
+
 <*
  IPv6 socket address.
- Used for TCP/UDP connections over IPv6.
+ Port is in network byte order.
 *>
-struct Sockaddr_in6
+struct Sockaddr_in6 @feat(!DARWIN & !BSD)
 {
 	ushort sin6_family;
+	ushort sin6_port;
+	uint sin6_flowinfo;
+	char[16] sin6_addr;
+	uint sin6_scope_id;
+}
+
+struct Sockaddr_in6 @feat(DARWIN | BSD)
+{
+	char sin6_len;
+	char sin6_family;
 	ushort sin6_port;
 	uint sin6_flowinfo;
 	char[16] sin6_addr;
@@ -735,7 +764,7 @@ const int UV_ECONNRESET   = env::WIN32 ? -4077 : (env::DARWIN ? -54 : -104);
 // Address families
 const int AF_UNSPEC = 0;   // Unspecified (IPv4 or IPv6)
 const int AF_INET = 2;     // IPv4
-const int AF_INET6 = 10;   // IPv6
+const int AF_INET6 = env::WIN32 ? 23 : env::DARWIN ? 30 : env::FREEBSD ? 28 : env::BSD_FAMILY ? 24 : 10;  // IPv6
 
 // Socket types
 const int SOCK_STREAM = 1;  // TCP

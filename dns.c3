@@ -174,8 +174,9 @@ fn void free_result(uv::AddrInfo* result){
  Returns empty string on error.
 
  @param addr : "Socket address to convert"
+ @param allocator : "Allocator for the returned string"
 *>
-fn String addr_to_string(uv::Sockaddr* addr){
+fn String addr_to_string(uv::Sockaddr* addr, Allocator allocator = mem){
     if (!addr) return "";
 
     if (addr.sa_family == uv::AF_INET)
@@ -185,7 +186,7 @@ fn String addr_to_string(uv::Sockaddr* addr){
         char[32] buffer;
         int result = uv::ip4_name(addr4, &buffer, 32);
         if (result < 0) return "";
-        return ((ZString)&buffer).copy(mem);
+        return ((ZString)&buffer).copy(allocator);
     }
     else if (addr.sa_family == uv::AF_INET6)
     {
@@ -194,7 +195,7 @@ fn String addr_to_string(uv::Sockaddr* addr){
         char[64] buffer;
         int result = uv::ip6_name(addr6, &buffer, 64);
         if (result < 0) return "";
-        return ((ZString)&buffer).copy(mem);
+        return ((ZString)&buffer).copy(allocator);
     }
 
     return "";

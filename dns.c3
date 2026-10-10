@@ -98,11 +98,12 @@ fn void DnsResolver.resolve(&self, String hostname, String service,
     hints.ai_protocol = uv::IPPROTO_UDP;  // UDP protocol
     hints.ai_flags = uv::AI_NUMERICSERV;  // Service is a numeric port
 
-    ZString c_hostname = (ZString)hostname.ptr;
-    ZString c_service = (ZString)service.ptr;
-
-    int result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
-                                 c_hostname, c_service, &hints);
+    int result;
+    @pool()
+    {
+        result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
+                                 hostname.zstr_tcopy(), service.zstr_tcopy(), &hints);
+    };
 
     if (result < 0)
     {
@@ -141,11 +142,12 @@ fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
     hints.ai_protocol = uv::IPPROTO_TCP;  // TCP protocol
     hints.ai_flags = uv::AI_NUMERICSERV;  // Service is a numeric port
 
-    ZString c_hostname = (ZString)hostname.ptr;
-    ZString c_service = (ZString)service.ptr;
-
-    int result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
-                                 c_hostname, c_service, &hints);
+    int result;
+    @pool()
+    {
+        result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
+                                 hostname.zstr_tcopy(), service.zstr_tcopy(), &hints);
+    };
 
     if (result < 0)
     {

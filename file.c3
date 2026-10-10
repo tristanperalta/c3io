@@ -351,8 +351,11 @@ fn void open(event_loop::EventLoop* loop, String path, int flags, int mode,
     ctx.user_data = user_data;
     ctx.loop = loop;
 
-    ZString cpath = (ZString)path.ptr;
-    int result = uv::fs_open(loop.loop, &ctx.req, cpath, flags, mode, &on_open_internal);
+    int result;
+    @pool()
+    {
+        result = uv::fs_open(loop.loop, &ctx.req, path.zstr_tcopy(), flags, mode, &on_open_internal);
+    };
 
     if (result < 0)
     {
@@ -469,8 +472,11 @@ fn void stat(event_loop::EventLoop* loop, String path,
     ctx.cb = callback;
     ctx.user_data = user_data;
 
-    ZString cpath = (ZString)path.ptr;
-    int result = uv::fs_stat(loop.loop, &ctx.req, cpath, &on_stat_internal);
+    int result;
+    @pool()
+    {
+        result = uv::fs_stat(loop.loop, &ctx.req, path.zstr_tcopy(), &on_stat_internal);
+    };
 
     if (result < 0)
     {
@@ -551,8 +557,11 @@ fn void mkdir(event_loop::EventLoop* loop, String path, int mode,
     ctx.cb = callback;
     ctx.user_data = user_data;
 
-    ZString cpath = (ZString)path.ptr;
-    int result = uv::fs_mkdir(loop.loop, &ctx.req, cpath, mode, &on_mkdir_internal);
+    int result;
+    @pool()
+    {
+        result = uv::fs_mkdir(loop.loop, &ctx.req, path.zstr_tcopy(), mode, &on_mkdir_internal);
+    };
 
     if (result < 0)
     {
@@ -582,8 +591,11 @@ fn void scandir(event_loop::EventLoop* loop, String path,
     ctx.cb = callback;
     ctx.user_data = user_data;
 
-    ZString cpath = (ZString)path.ptr;
-    int result = uv::fs_scandir(loop.loop, &ctx.req, cpath, 0, &on_scandir_internal);
+    int result;
+    @pool()
+    {
+        result = uv::fs_scandir(loop.loop, &ctx.req, path.zstr_tcopy(), 0, &on_scandir_internal);
+    };
 
     if (result < 0)
     {

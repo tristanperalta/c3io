@@ -171,9 +171,12 @@ fn UdpSocket*? create(event_loop::EventLoop* loop){
 *>
 fn void? UdpSocket.bind(&self, String ip, int port){
     uv::Sockaddr_in addr;
-    ZString c_ip = (ZString)ip.ptr;
-
-    c3io::@check(uv::ip4_addr(c_ip, port, &addr), UDP_BIND_FAILED)!;
+    int result;
+    @pool()
+    {
+        result = uv::ip4_addr(ip.zstr_tcopy(), port, &addr);
+    };
+    c3io::@check(result, UDP_BIND_FAILED)!;
     c3io::@check(uv::udp_bind(self.handle, (uv::Sockaddr*)&addr, uv::UV_UDP_REUSEADDR), UDP_BIND_FAILED)!;
 }
 
@@ -199,9 +202,11 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
 
     // Parse destination address
     uv::Sockaddr_in addr;
-    ZString c_ip = (ZString)ip.ptr;
-
-    int result = uv::ip4_addr(c_ip, port, &addr);
+    int result;
+    @pool()
+    {
+        result = uv::ip4_addr(ip.zstr_tcopy(), port, &addr);
+    };
     if (result != 0)
     {
         if (callback)

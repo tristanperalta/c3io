@@ -227,3 +227,28 @@ fn void test_tcp_http_request() @test
     io::printfn("Skipping HTTP test (requires nested function support)");
     assert(true, "Test skipped");
 }
+
+fn void on_unused_connect(c3io::tcp::TcpConnection* conn, int status, void* user_data)
+{
+}
+
+<*
+ A connect that fails to parse its address must close the handle it created,
+ so the loop can still be closed afterwards.
+*>
+fn void test_tcp_connect_bad_address_leaves_loop_closable() @test
+{
+    event_loop::EventLoop loop = event_loop::create()!!;
+
+    if (try c3io::tcp::connect(&loop, "not-an-ip", 80, &on_unused_connect))
+    {
+        assert(false, "Connecting to an invalid address should fail");
+    }
+    while (loop.is_alive()) loop.run_once();
+
+    if (catch err = loop.close())
+    {
+        assert(false, "Loop should close once the failed connection is cleaned up");
+    }
+    free(loop.loop);
+}

@@ -154,12 +154,14 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
 
     // Parse address
     uv::Sockaddr_in addr;
-    ZString host_z = (ZString)host;
-    int result = uv::ip4_addr(host_z, (int)port, &addr);
+    int result;
+    @pool()
+    {
+        result = uv::ip4_addr(host.zstr_tcopy(), (int)port, &addr);
+    };
     if (result != 0)
     {
-        free(conn.handle);
-        free(conn);
+        conn.close();
         c3io::set_last_status(result);
         return TCP_ADDR_PARSE_FAILED~;
     }
@@ -181,8 +183,7 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
     {
         free(req);
         free(ctx);
-        free(conn.handle);
-        free(conn);
+        conn.close();
         c3io::set_last_status(result);
         return TCP_CONNECT_FAILED~;
     }
@@ -460,9 +461,11 @@ fn void on_connection_internal(uv::Stream* server, int status)
 *>
 fn void? TcpConnection.bind(&self, String ip, ushort port){
     uv::Sockaddr_in addr;
-    ZString c_ip = (ZString)ip.ptr;
-
-    int result = uv::ip4_addr(c_ip, port, &addr);
+    int result;
+    @pool()
+    {
+        result = uv::ip4_addr(ip.zstr_tcopy(), port, &addr);
+    };
     if (result != 0)
     {
         c3io::set_last_status(result);

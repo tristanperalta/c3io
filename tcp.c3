@@ -45,6 +45,8 @@ excuse
 *>
 struct TcpConnection
 {
+    event_loop::HandleOwner owner;
+    Allocator allocator;
     uv::Tcp* handle;
     event_loop::EventLoop* loop;
     AllocCallback alloc_cb;
@@ -89,22 +91,24 @@ struct WriteContext
 <*
  Create a new TCP connection (not yet connected).
 
- @param loop: "Event loop to attach to"
+ @param loop : "Event loop to attach to"
+ @param allocator : "Allocator for the connection and its buffers (default: the loop's)"
 *>
-fn TcpConnection*? create(event_loop::EventLoop* loop){
-    // Allocate TCP handle
-    uv::Tcp* handle = c3io::alloc_handle(uv::Tcp, uv::HandleType.TCP);
+fn TcpConnection*? create(event_loop::EventLoop* loop, Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    uv::Tcp* handle = c3io::alloc_handle(allocator, uv::Tcp, uv::HandleType.TCP);
 
-    // Initialize TCP handle
     int result = uv::tcp_init(loop.loop, handle);
     if (result != 0)
     {
-        free(handle);
+        alloc::free(allocator, handle);
         c3io::set_last_status(result);
         return TCP_INIT_FAILED~;
     }
 
-    TcpConnection* conn = mem::new(TcpConnection);
+    TcpConnection* conn = alloc::new(allocator, TcpConnection);
+    conn.owner.init(&on_close_internal);
+    conn.allocator = allocator;
     conn.handle = handle;
     conn.loop = loop;
 
@@ -122,6 +126,7 @@ fn TcpConnection*? create(event_loop::EventLoop* loop){
 fn void on_connect_internal(uv::Connect* req, int status)
 {
     ConnectContext* ctx = uv::req_get(ConnectContext, req);
+    Allocator allocator = ctx.conn.allocator;
 
     if (ctx.cb != null)
     {
@@ -129,8 +134,8 @@ fn void on_connect_internal(uv::Connect* req, int status)
     }
 
     // Free the connect context and request (but NOT the connection)
-    free(ctx);
-    free(req);
+    alloc::free(allocator, ctx);
+    alloc::free(allocator, req);
 }
 
 <*
@@ -143,9 +148,10 @@ fn void on_connect_internal(uv::Connect* req, int status)
  @param user_data: "User context passed to callback"
 *>
 fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port,
-                            ConnectCallback callback, void* user_data = null){
+                            ConnectCallback callback, void* user_data = null,
+                            Allocator allocator = null){
     // Create connection
-    TcpConnection*? conn_opt = create(loop);
+    TcpConnection*? conn_opt = create(loop, allocator);
     if (catch err = conn_opt)
     {
         return err~;
@@ -167,8 +173,8 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
     }
 
     // Allocate connect request and context (freed in callback)
-    uv::Connect* req = c3io::alloc_req(uv::Connect, uv::ReqType.CONNECT);
-    ConnectContext* ctx = mem::new(ConnectContext);
+    uv::Connect* req = c3io::alloc_req(conn.allocator, uv::Connect, uv::ReqType.CONNECT);
+    ConnectContext* ctx = alloc::new(conn.allocator, ConnectContext);
     ctx.conn = conn;
     ctx.cb = callback;
     ctx.user_data = user_data;
@@ -181,8 +187,8 @@ fn TcpConnection*? connect(event_loop::EventLoop* loop, String host, ushort port
                              (uv::Sockaddr*)&addr, &on_connect_internal);
     if (result != 0)
     {
-        free(req);
-        free(ctx);
+        alloc::free(conn.allocator, req);
+        alloc::free(conn.allocator, ctx);
         conn.close();
         c3io::set_last_status(result);
         return TCP_CONNECT_FAILED~;
@@ -199,14 +205,6 @@ fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf)
 {
     // Get connection from handle's data field
     TcpConnection* conn = uv::handle_get(TcpConnection, handle);
-    if (conn == null)
-    {
-        // Fallback: allocate default buffer
-        char[] default_buf = mem::new_array(char, (sz)suggested_size);
-        buf.base = default_buf.ptr;
-        buf.len = default_buf.len;
-        return;
-    }
 
     if (conn.alloc_cb != null)
     {
@@ -217,7 +215,7 @@ fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf)
     else
     {
         // Default: allocate suggested size
-        char[] default_buf = mem::new_array(char, (sz)suggested_size);
+        char[] default_buf = alloc::new_array(conn.allocator, char, (sz)suggested_size);
         buf.base = default_buf.ptr;
         buf.len = default_buf.len;
     }
@@ -231,12 +229,6 @@ fn void on_read_internal(uv::Stream* stream, sz nread, uv::Buf* buf)
 {
     // Get connection from handle's data field
     TcpConnection* conn = uv::handle_get(TcpConnection, stream);
-    if (conn == null)
-    {
-        // Free buffer and return
-        if (buf.base != null) free(buf.base);
-        return;
-    }
 
     if (nread > 0)
     {
@@ -270,7 +262,7 @@ fn void on_read_internal(uv::Stream* stream, sz nread, uv::Buf* buf)
     // Free the buffer if it was allocated
     if (buf.base != null)
     {
-        free(buf.base);
+        alloc::free(conn.allocator, buf.base);
     }
 }
 
@@ -309,6 +301,7 @@ fn void? TcpConnection.stop_read(&self){
 fn void on_write_internal(uv::Write* req, int status)
 {
     WriteContext* ctx = uv::req_get(WriteContext, req);
+    Allocator allocator = ctx.conn.allocator;
 
     if (ctx.cb != null)
     {
@@ -318,11 +311,11 @@ fn void on_write_internal(uv::Write* req, int status)
     // Free the write context, buffers, and request
     if (ctx.bufs != null)
     {
-        free(ctx.bufs.base);  // Free the copied data
-        free(ctx.bufs);
+        alloc::free(allocator, ctx.bufs.base);  // Free the copied data
+        alloc::free(allocator, ctx.bufs);
     }
-    free(ctx);
-    free(req);
+    alloc::free(allocator, ctx);
+    alloc::free(allocator, req);
 }
 
 <*
@@ -335,15 +328,15 @@ fn void on_write_internal(uv::Write* req, int status)
 fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
                              void* user_data = null){
     // Allocate write request and context (freed in callback)
-    uv::Write* req = c3io::alloc_req(uv::Write, uv::ReqType.WRITE);
-    WriteContext* ctx = mem::new(WriteContext);
+    uv::Write* req = c3io::alloc_req(self.allocator, uv::Write, uv::ReqType.WRITE);
+    WriteContext* ctx = alloc::new(self.allocator, WriteContext);
     ctx.conn = self;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
     // Create buffer (copy data so it stays valid until write completes)
-    ctx.bufs = mem::new(uv::Buf);
-    char* data_copy = mem::new_array(char, data.len);
+    ctx.bufs = alloc::new(self.allocator, uv::Buf);
+    char* data_copy = alloc::new_array(self.allocator, char, data.len);
     mem::copy(data_copy, data.ptr, data.len);
     ctx.bufs.base = data_copy;
     ctx.bufs.len = data.len;
@@ -355,10 +348,10 @@ fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
                           ctx.bufs, 1, &on_write_internal);
     if (result != 0)
     {
-        free(ctx.bufs.base);
-        free(ctx.bufs);
-        free(ctx);
-        free(req);
+        alloc::free(self.allocator, ctx.bufs.base);
+        alloc::free(self.allocator, ctx.bufs);
+        alloc::free(self.allocator, ctx);
+        alloc::free(self.allocator, req);
         c3io::set_last_status(result);
         return TCP_WRITE_FAILED~;
     }
@@ -370,19 +363,16 @@ fn void? TcpConnection.write(&self, char[] data, WriteCallback callback,
 *>
 fn void on_close_internal(uv::Handle* handle)
 {
-    // Get connection from handle and free both
     TcpConnection* conn = uv::handle_get(TcpConnection, handle);
-    free(handle);
-    if (conn != null)
-    {
-        free(conn);
-    }
+    Allocator allocator = conn.allocator;
+    alloc::free(allocator, handle);
+    alloc::free(allocator, conn);
 }
 
 <*
  Close the TCP connection.
  This initiates async close - both handle and connection will be freed when close completes.
- DO NOT call free() or access the connection after calling close().
+ DO NOT free or access the connection after calling close().
 *>
 fn void TcpConnection.close(&self){
     if (self.handle != null)
@@ -431,7 +421,7 @@ fn void on_connection_internal(uv::Stream* server, int status)
     }
 
     // Create a new client connection
-    TcpConnection*? client_opt = create(server_conn.loop);
+    TcpConnection*? client_opt = create(server_conn.loop, server_conn.allocator);
     if (catch err = client_opt)
     {
         return;

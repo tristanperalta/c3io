@@ -31,31 +31,121 @@ excuse
 
 <*
  Event loop wrapper.
- Manages libuv event loop lifecycle.
+ Manages the libuv loop and the allocator its objects use by default.
+
+ Handles and requests keep a pointer to their EventLoop, so don't move or copy
+ an EventLoop after creating objects on it.
 *>
 struct EventLoop
 {
     uv::Loop* loop;
+    Allocator allocator;
+    PendingRequest* pending;  // In-flight cancellable requests
+    RequestId next_request_id;
+}
+
+<*
+ Identifies an in-flight request (file operation, work item, DNS query) so it
+ can be cancelled. Ids are never reused, so a stale id is harmless.
+*>
+typedef RequestId = ulong;
+
+<*
+ Link in the loop's list of in-flight requests. Embedded in each request
+ context; see EventLoop.track().
+*>
+struct PendingRequest
+{
+    PendingRequest* prev;
+    PendingRequest* next;
+    uv::Req* req;
+    RequestId id;
+}
+
+<*
+ First field of every c3io handle wrapper (UdpSocket, TcpConnection, Timer...).
+ The uv handle's data points at the wrapper, so code that only has the uv
+ handle, such as the loop's shutdown walk, can close it properly.
+*>
+struct HandleOwner
+{
+    uint magic;  // HANDLE_OWNER_MAGIC; marks the handle data as a HandleOwner
+    uv::CloseCb close_cb;
+}
+
+const uint HANDLE_OWNER_MAGIC = 0xC310_0E3E;
+
+<*
+ Initialize the HandleOwner header of a wrapper.
+*>
+fn void HandleOwner.init(&self, uv::CloseCb close_cb)
+{
+    self.magic = HANDLE_OWNER_MAGIC;
+    self.close_cb = close_cb;
 }
 
 <*
  Create and initialize an event loop.
-*>
-fn EventLoop? create(){
-    // Allocate loop structure
-    usz loop_size = uv::loop_size();
-    uv::Loop* loop = mem::new_array(char, (sz)loop_size);
 
-    // Initialize the loop
+ @param allocator : "Allocator for the loop and, by default, everything created on it"
+*>
+fn EventLoop? create(Allocator allocator = mem){
+    uv::Loop* loop = alloc::calloc(allocator, (sz)uv::loop_size());
+
     int result = uv::loop_init(loop);
     if (result != 0)
     {
-        free(loop);
+        alloc::free(allocator, loop);
         c3io::set_last_status(result);
         return EVENT_LOOP_INIT_FAILED~;
     }
 
-    return (EventLoop){ loop };
+    return { .loop = loop, .allocator = allocator };
+}
+
+<*
+ The allocator an object on this loop should use: `allocator` if given,
+ otherwise the loop's.
+*>
+fn Allocator EventLoop.allocator_or(&self, Allocator allocator)
+{
+    if (allocator) return allocator;
+    return self.allocator;
+}
+
+<*
+ Register an in-flight request and return its id.
+
+ @param entry : "Link embedded in the request's context"
+ @param req : "The uv request"
+*>
+fn RequestId EventLoop.track(&self, PendingRequest* entry, void* req)
+{
+    entry.req = req;
+    entry.id = ++self.next_request_id;
+    entry.prev = null;
+    entry.next = self.pending;
+    if (self.pending) self.pending.prev = entry;
+    self.pending = entry;
+    return entry.id;
+}
+
+<*
+ Remove a completed request from the in-flight list.
+*>
+fn void EventLoop.untrack(&self, PendingRequest* entry)
+{
+    if (entry.prev)
+    {
+        entry.prev.next = entry.next;
+    }
+    else if (self.pending == entry)
+    {
+        self.pending = entry.next;
+    }
+    if (entry.next) entry.next.prev = entry.prev;
+    entry.prev = null;
+    entry.next = null;
 }
 
 <*
@@ -102,36 +192,22 @@ fn bool EventLoop.is_alive(&self){
 }
 
 <*
- Generic close callback that frees the handle.
- This is used by close_walk_cb for handles that don't have wrapper structs.
-*>
-fn void generic_close_cb(uv::Handle* handle)
-{
-    free(handle);
-}
-
-<*
  Walk callback for closing all handles.
- Used internally by close_all_handles().
-
- IMPORTANT: This closes handles that were never explicitly closed.
- For handles that have wrapper structs (Timer*, TcpConnection*, etc.),
- those wrappers should have called .close() which registers proper cleanup callbacks.
- This function catches any handles that were NOT closed and closes them generically.
+ Closes each handle that isn't already closing. A c3io handle is closed with
+ its owner's close callback, which frees the uv handle and the wrapper. Any
+ other handle is closed without a callback; its memory belongs to whoever
+ created it.
 *>
 fn void close_walk_cb(uv::Handle* handle, void* arg)
 {
-    // Only close handles that are not already closing
-    // uv_is_closing returns non-zero if handle is closing or closed
-    // We must explicitly check == 0 (not use ! operator on int)
-    int is_closing = uv::is_closing(handle);
-    if (is_closing == 0)
+    if (uv::is_closing(handle) != 0) return;
+    HandleOwner* owner = uv::handle_get_data(handle);
+    if (owner && owner.magic == HANDLE_OWNER_MAGIC)
     {
-        // Close with generic callback that just frees the handle
-        // Note: If this handle has a wrapper struct, it will leak!
-        // Wrappers should have called .close() before close_all_handles()
-        uv::close(handle, &generic_close_cb);
+        uv::close(handle, owner.close_cb);
+        return;
     }
+    uv::close(handle, null);
 }
 
 <*
@@ -171,9 +247,7 @@ fn void? EventLoop.close(&self){
 *>
 fn void EventLoop.free(&self){
     (void)self.close();
-
-    // Free the memory
-    free(self.loop);
+    alloc::free(self.allocator, self.loop);
 }
 
 // Thread Pool / Work Queue Support
@@ -195,6 +269,7 @@ struct WorkContext
     CompletionCallback callback;  // Completion callback in event loop
     void* user_data;           // User data passed to callback
     int error;                 // Error code (0 = success)
+    Allocator allocator;       // Allocator of work_req (set by queue_work)
 }
 
 <*
@@ -225,7 +300,7 @@ fn void after_work_in_event_loop(uv::Work* req, int status)
 
     // Clean up work request BEFORE calling callback
     // This allows the callback to safely free the WorkContext
-    free(ctx.work_req);
+    alloc::free(ctx.allocator, ctx.work_req);
     ctx.work_req = null;
 
     // Call user completion callback in event loop thread
@@ -249,8 +324,8 @@ fn void after_work_in_event_loop(uv::Work* req, int status)
 *>
 fn int EventLoop.queue_work(&self, WorkContext* ctx){
     // Allocate uv_work_t handle
-    usz work_size = uv::req_size(uv::ReqType.WORK);
-    ctx.work_req = mem::new_array(char, (sz)work_size);
+    ctx.allocator = self.allocator;
+    ctx.work_req = c3io::alloc_req(self.allocator, uv::Work, uv::ReqType.WORK);
     uv::req_set_data((uv::Req*)ctx.work_req, ctx);
 
     // Queue work
@@ -260,7 +335,7 @@ fn int EventLoop.queue_work(&self, WorkContext* ctx){
 
     if (result != 0)
     {
-        free(ctx.work_req);
+        alloc::free(self.allocator, ctx.work_req);
         ctx.work_req = null;
         return result;
     }

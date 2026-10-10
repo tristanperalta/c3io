@@ -35,6 +35,8 @@ alias TimeoutCallback = fn void(Timer* timer, void* user_data);
 *>
 struct Timer
 {
+    event_loop::HandleOwner owner;
+    Allocator allocator;
     uv::Timer* handle;
     event_loop::EventLoop* loop;
     TimeoutCallback callback;
@@ -54,38 +56,35 @@ fn void on_timer_internal(uv::Timer* handle)
 
 fn void on_close_internal(uv::Handle* handle)
 {
-    // Get timer from handle and free both
     Timer* timer = uv::handle_get(Timer, handle);
-    free(handle);
-    if (timer != null)
-    {
-        free(timer);
-    }
+    Allocator allocator = timer.allocator;
+    alloc::free(allocator, handle);
+    alloc::free(allocator, timer);
 }
 
 <*
  Create a new timer.
 
  @param loop : "Event loop to attach to"
+ @param allocator : "Allocator for the timer (default: the loop's)"
 *>
-fn Timer*? create(event_loop::EventLoop* loop){
-    // Allocate timer handle
-    uv::Timer* handle = c3io::alloc_handle(uv::Timer, uv::HandleType.TIMER);
+fn Timer*? create(event_loop::EventLoop* loop, Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    uv::Timer* handle = c3io::alloc_handle(allocator, uv::Timer, uv::HandleType.TIMER);
 
-    // Initialize timer handle
     int result = uv::timer_init(loop.loop, handle);
     if (result != 0)
     {
-        free(handle);
+        alloc::free(allocator, handle);
         c3io::set_last_status(result);
         return TIMER_INIT_FAILED~;
     }
 
-    Timer* timer = mem::new(Timer);
+    Timer* timer = alloc::new(allocator, Timer);
+    timer.owner.init(&on_close_internal);
+    timer.allocator = allocator;
     timer.handle = handle;
     timer.loop = loop;
-    timer.callback = null;
-    timer.user_data = null;
 
     // Store timer pointer in handle's data field
     uv::handle_set(handle, timer);

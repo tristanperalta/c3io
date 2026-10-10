@@ -58,6 +58,7 @@ struct FileHandle
 {
     int fd;
     event_loop::EventLoop* loop;
+    Allocator allocator;
 }
 
 // Backwards compatibility typedef
@@ -85,6 +86,7 @@ alias ScandirCallback = fn void(DirEntry[] entries, int status, void* user_data)
 struct OpenContext
 {
     uv::Fs req;
+    Allocator allocator;
     OpenCallback cb;
     void* user_data;
     event_loop::EventLoop* loop;
@@ -93,6 +95,7 @@ struct OpenContext
 struct ReadContext
 {
     uv::Fs req;
+    Allocator allocator;
     uv::Buf buf;
     ReadCallback cb;
     void* user_data;
@@ -101,6 +104,7 @@ struct ReadContext
 struct WriteContext
 {
     uv::Fs req;
+    Allocator allocator;
     uv::Buf buf;
     WriteCallback cb;
     void* user_data;
@@ -109,6 +113,7 @@ struct WriteContext
 struct CloseContext
 {
     uv::Fs req;
+    Allocator allocator;
     CloseCallback cb;
     void* user_data;
 }
@@ -116,6 +121,7 @@ struct CloseContext
 struct StatContext
 {
     uv::Fs req;
+    Allocator allocator;
     StatCallback cb;
     void* user_data;
 }
@@ -123,6 +129,7 @@ struct StatContext
 struct TruncateContext
 {
     uv::Fs req;
+    Allocator allocator;
     TruncateCallback cb;
     void* user_data;
 }
@@ -130,6 +137,7 @@ struct TruncateContext
 struct FsyncContext
 {
     uv::Fs req;
+    Allocator allocator;
     FsyncCallback cb;
     void* user_data;
 }
@@ -137,6 +145,7 @@ struct FsyncContext
 struct MkdirContext
 {
     uv::Fs req;
+    Allocator allocator;
     MkdirCallback cb;
     void* user_data;
 }
@@ -144,6 +153,7 @@ struct MkdirContext
 struct ScandirContext
 {
     uv::Fs req;
+    Allocator allocator;
     ScandirCallback cb;
     void* user_data;
 }
@@ -160,15 +170,16 @@ fn void on_open_internal(uv::Fs* req)
         if (result >= 0)
         {
             // Success - create FileHandle
-            file = mem::new(FileHandle);
+            file = alloc::new(ctx.allocator, FileHandle);
             file.fd = result;
             file.loop = ctx.loop;
+            file.allocator = ctx.allocator;
         }
         ctx.cb(file, result < 0 ? result : 0, ctx.user_data);
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_read_internal(uv::Fs* req)
@@ -189,11 +200,11 @@ fn void on_read_internal(uv::Fs* req)
     // Free the buffer we allocated
     if (ctx.buf.base)
     {
-        free(ctx.buf.base);
+        alloc::free(ctx.allocator, ctx.buf.base);
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_write_internal(uv::Fs* req)
@@ -207,7 +218,7 @@ fn void on_write_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_close_internal(uv::Fs* req)
@@ -221,7 +232,7 @@ fn void on_close_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_stat_internal(uv::Fs* req)
@@ -236,7 +247,7 @@ fn void on_stat_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_truncate_internal(uv::Fs* req)
@@ -250,7 +261,7 @@ fn void on_truncate_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_fsync_internal(uv::Fs* req)
@@ -264,7 +275,7 @@ fn void on_fsync_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_mkdir_internal(uv::Fs* req)
@@ -278,7 +289,7 @@ fn void on_mkdir_internal(uv::Fs* req)
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 fn void on_scandir_internal(uv::Fs* req)
@@ -298,7 +309,7 @@ fn void on_scandir_internal(uv::Fs* req)
             if (num_entries > 0)
             {
                 // Allocate array for entries
-                entries = mem::new_array(DirEntry, num_entries);
+                entries = alloc::new_array(ctx.allocator, DirEntry, num_entries);
 
                 // Iterate through all entries
                 int idx = 0;
@@ -308,7 +319,7 @@ fn void on_scandir_internal(uv::Fs* req)
                     if (idx < num_entries)
                     {
                         // Copy name (uv dirent name is a C string)
-                        String name_str = ((ZString)ent.name).copy(mem);
+                        String name_str = ((ZString)ent.name).copy(ctx.allocator);
                         entries[idx].name = name_str;
                         entries[idx].type = ent.type;
                         idx++;
@@ -322,16 +333,16 @@ fn void on_scandir_internal(uv::Fs* req)
         // Free entry names (user is responsible for freeing the entries array)
         for (usz i = 0; i < entries.len; i++)
         {
-            free(entries[i].name.ptr);
+            alloc::free(ctx.allocator, entries[i].name.ptr);
         }
         if (entries.len > 0)
         {
-            free(entries.ptr);
+            alloc::free(ctx.allocator, entries.ptr);
         }
     }
 
     uv::fs_req_cleanup(req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx);
 }
 
 <*
@@ -343,10 +354,14 @@ fn void on_scandir_internal(uv::Fs* req)
  @param mode : "File permissions (e.g., 0644)"
  @param callback : "Completion callback"
  @param user_data : "User data passed to callback"
+ @param allocator : "Allocator for the request and results (default: the loop's)"
 *>
 fn void open(event_loop::EventLoop* loop, String path, int flags, int mode,
-             OpenCallback callback, void* user_data){
-    OpenContext* ctx = mem::new(OpenContext);
+             OpenCallback callback, void* user_data,
+             Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    OpenContext* ctx = alloc::new(allocator, OpenContext);
+    ctx.allocator = allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
     ctx.loop = loop;
@@ -364,7 +379,7 @@ fn void open(event_loop::EventLoop* loop, String path, int flags, int mode,
         {
             callback(null, result, user_data);
         }
-        free(ctx);
+        alloc::free(allocator, ctx);
     }
 }
 
@@ -378,12 +393,13 @@ fn void open(event_loop::EventLoop* loop, String path, int flags, int mode,
 *>
 fn void FileHandle.read(&self, long offset, usz size,
                         ReadCallback callback, void* user_data){
-    ReadContext* ctx = mem::new(ReadContext);
+    ReadContext* ctx = alloc::new(self.allocator, ReadContext);
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
     // Allocate buffer for reading
-    ctx.buf.base = mem::new_array(char, (sz)size);
+    ctx.buf.base = alloc::new_array(self.allocator, char, (sz)size);
     ctx.buf.len = size;
 
     int result = uv::fs_read(self.loop.loop, &ctx.req, self.fd, &ctx.buf, 1, offset, &on_read_internal);
@@ -395,8 +411,8 @@ fn void FileHandle.read(&self, long offset, usz size,
         {
             callback({}, result, user_data);
         }
-        free(ctx.buf.base);
-        free(ctx);
+        alloc::free(self.allocator, ctx.buf.base);
+        alloc::free(self.allocator, ctx);
     }
 }
 
@@ -410,7 +426,8 @@ fn void FileHandle.read(&self, long offset, usz size,
 *>
 fn void FileHandle.write(&self, long offset, char[] data,
                          WriteCallback callback, void* user_data){
-    WriteContext* ctx = mem::new(WriteContext);
+    WriteContext* ctx = alloc::new(self.allocator, WriteContext);
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -426,7 +443,7 @@ fn void FileHandle.write(&self, long offset, char[] data,
         {
             callback(0, result, user_data);
         }
-        free(ctx);
+        alloc::free(self.allocator, ctx);
     }
 }
 
@@ -437,7 +454,8 @@ fn void FileHandle.write(&self, long offset, char[] data,
  @param user_data : "User data passed to callback"
 *>
 fn void FileHandle.close(&self, CloseCallback callback, void* user_data){
-    CloseContext* ctx = mem::new(CloseContext);
+    CloseContext* ctx = alloc::new(self.allocator, CloseContext);
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -450,12 +468,12 @@ fn void FileHandle.close(&self, CloseCallback callback, void* user_data){
         {
             callback(result, user_data);
         }
-        free(ctx);
+        alloc::free(self.allocator, ctx);
     }
 
     // Free the FileHandle struct after initiating close
     // Note: The file descriptor will be closed by libuv asynchronously
-    free(self);
+    alloc::free(self.allocator, self);
 }
 
 <*
@@ -465,10 +483,14 @@ fn void FileHandle.close(&self, CloseCallback callback, void* user_data){
  @param path : "File path"
  @param callback : "Completion callback"
  @param user_data : "User data passed to callback"
+ @param allocator : "Allocator for the request and results (default: the loop's)"
 *>
 fn void stat(event_loop::EventLoop* loop, String path,
-             StatCallback callback, void* user_data){
-    StatContext* ctx = mem::new(StatContext);
+             StatCallback callback, void* user_data,
+             Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    StatContext* ctx = alloc::new(allocator, StatContext);
+    ctx.allocator = allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -485,7 +507,7 @@ fn void stat(event_loop::EventLoop* loop, String path,
         {
             callback(null, result, user_data);
         }
-        free(ctx);
+        alloc::free(allocator, ctx);
     }
 }
 
@@ -500,7 +522,8 @@ fn void stat(event_loop::EventLoop* loop, String path,
 *>
 fn void FileHandle.ftruncate(&self, long size,
                              TruncateCallback callback, void* user_data){
-    TruncateContext* ctx = mem::new(TruncateContext);
+    TruncateContext* ctx = alloc::new(self.allocator, TruncateContext);
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -513,7 +536,7 @@ fn void FileHandle.ftruncate(&self, long size,
         {
             callback(result, user_data);
         }
-        free(ctx);
+        alloc::free(self.allocator, ctx);
     }
 }
 
@@ -525,7 +548,8 @@ fn void FileHandle.ftruncate(&self, long size,
  @param user_data : "User data passed to callback"
 *>
 fn void FileHandle.fsync(&self, FsyncCallback callback, void* user_data){
-    FsyncContext* ctx = mem::new(FsyncContext);
+    FsyncContext* ctx = alloc::new(self.allocator, FsyncContext);
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -538,7 +562,7 @@ fn void FileHandle.fsync(&self, FsyncCallback callback, void* user_data){
         {
             callback(result, user_data);
         }
-        free(ctx);
+        alloc::free(self.allocator, ctx);
     }
 }
 
@@ -550,10 +574,14 @@ fn void FileHandle.fsync(&self, FsyncCallback callback, void* user_data){
  @param mode : "Directory permissions (e.g., 0755)"
  @param callback : "Completion callback"
  @param user_data : "User data passed to callback"
+ @param allocator : "Allocator for the request and results (default: the loop's)"
 *>
 fn void mkdir(event_loop::EventLoop* loop, String path, int mode,
-              MkdirCallback callback, void* user_data){
-    MkdirContext* ctx = mem::new(MkdirContext);
+              MkdirCallback callback, void* user_data,
+             Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    MkdirContext* ctx = alloc::new(allocator, MkdirContext);
+    ctx.allocator = allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -570,7 +598,7 @@ fn void mkdir(event_loop::EventLoop* loop, String path, int mode,
         {
             callback(result, user_data);
         }
-        free(ctx);
+        alloc::free(allocator, ctx);
     }
 }
 
@@ -584,10 +612,14 @@ fn void mkdir(event_loop::EventLoop* loop, String path, int mode,
  @param path : "Directory path"
  @param callback : "Completion callback"
  @param user_data : "User data passed to callback"
+ @param allocator : "Allocator for the request and results (default: the loop's)"
 *>
 fn void scandir(event_loop::EventLoop* loop, String path,
-                ScandirCallback callback, void* user_data){
-    ScandirContext* ctx = mem::new(ScandirContext);
+                ScandirCallback callback, void* user_data,
+             Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    ScandirContext* ctx = alloc::new(allocator, ScandirContext);
+    ctx.allocator = allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
@@ -604,6 +636,6 @@ fn void scandir(event_loop::EventLoop* loop, String path,
         {
             callback({}, result, user_data);
         }
-        free(ctx);
+        alloc::free(allocator, ctx);
     }
 }

@@ -12,14 +12,15 @@ import c3io::event_loop;
  All operations are non-blocking and use callbacks for completion.
 
  Usage:
-   async_dns::resolve(loop, "example.com", "6881", &on_resolve, user_data);
+   DnsResolver* resolver = dns::create(loop);
+   resolver.resolve("example.com", "6881", &on_resolve, user_data)!;
 
    // In on_resolve callback:
    if (addrs) {
        for (AddrInfo* info = addrs; info != null; info = info.ai_next) {
            // Use info.ai_addr
        }
-       async_dns::free_result(addrs);
+       dns::free_result(addrs);
    }
 *>
 
@@ -33,6 +34,7 @@ excuse DNS_RESOLVE_FAILED;
 struct DnsResolver
 {
     event_loop::EventLoop* loop;
+    Allocator allocator;
 }
 
 // Callback types
@@ -41,6 +43,9 @@ alias ResolveCallback = fn void(uv::AddrInfo* result, int status, void* user_dat
 // Request context structure
 struct ResolveContext
 {
+    event_loop::PendingRequest pending;
+    event_loop::EventLoop* loop;
+    Allocator allocator;
     uv::GetAddrInfo* req;
     ResolveCallback cb;
     void* user_data;
@@ -50,6 +55,7 @@ struct ResolveContext
 fn void on_resolve_internal(uv::GetAddrInfo* req, int status, uv::AddrInfo* res)
 {
     ResolveContext* ctx = uv::req_get(ResolveContext, req);
+    ctx.loop.untrack(&ctx.pending);
 
     if (ctx.cb)
     {
@@ -57,108 +63,98 @@ fn void on_resolve_internal(uv::GetAddrInfo* req, int status, uv::AddrInfo* res)
     }
 
     // Note: AddrInfo result is NOT freed here - caller must call free_result()
-    free(ctx.req);
-    free(ctx);
+    alloc::free(ctx.allocator, ctx.req);
+    alloc::free(ctx.allocator, ctx);
 }
 
 <*
  Create a new DNS resolver.
 
  @param loop : "Event loop to attach to"
+ @param allocator : "Allocator for the resolver and its queries (default: the loop's)"
 *>
-fn DnsResolver* create(event_loop::EventLoop* loop){
-    DnsResolver* resolver = mem::new(DnsResolver);
+fn DnsResolver* create(event_loop::EventLoop* loop, Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    DnsResolver* resolver = alloc::new(allocator, DnsResolver);
     resolver.loop = loop;
+    resolver.allocator = allocator;
     return resolver;
 }
 
 <*
- Resolve a hostname to IP addresses asynchronously.
- Callback receives AddrInfo linked list. Caller must call free_result() to free it.
-
- @param hostname : "Hostname to resolve"
- @param service : "Service name or port number"
- @param callback : "Completion callback"
- @param user_data : "User data passed to callback"
+ Free the resolver. Queries already started still complete.
 *>
-fn void DnsResolver.resolve(&self, String hostname, String service,
-                            ResolveCallback callback, void* user_data){
-    ResolveContext* ctx = mem::new(ResolveContext);
+fn void DnsResolver.free(&self){
+    alloc::free(self.allocator, self);
+}
+
+fn event_loop::RequestId? DnsResolver.start_query(&self, String hostname, String service,
+                                                 uv::AddrInfo* hints, ResolveCallback callback,
+                                                 void* user_data)
+{
+    ResolveContext* ctx = alloc::new(self.allocator, ResolveContext);
+    ctx.loop = self.loop;
+    ctx.allocator = self.allocator;
     ctx.cb = callback;
     ctx.user_data = user_data;
-
-    // Allocate request
-    ctx.req = c3io::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
+    ctx.req = c3io::alloc_req(self.allocator, uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
     uv::req_set(ctx.req, ctx);
-
-    // Prepare hints for UDP socket
-    uv::AddrInfo hints;
-    hints.ai_family = uv::AF_UNSPEC;      // Allow IPv4 or IPv6
-    hints.ai_socktype = uv::SOCK_DGRAM;   // UDP socket
-    hints.ai_protocol = uv::IPPROTO_UDP;  // UDP protocol
-    hints.ai_flags = uv::AI_NUMERICSERV;  // Service is a numeric port
 
     int result;
     @pool()
     {
         result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
-                                 hostname.zstr_tcopy(), service.zstr_tcopy(), &hints);
+                                 hostname.zstr_tcopy(), service.zstr_tcopy(), hints);
     };
-
     if (result < 0)
     {
-        // Immediate error
-        if (callback)
-        {
-            callback(null, result, user_data);
-        }
-        free(ctx.req);
-        free(ctx);
+        alloc::free(self.allocator, ctx.req);
+        alloc::free(self.allocator, ctx);
+        c3io::set_last_status(result);
+        return DNS_RESOLVE_FAILED~;
     }
+    return self.loop.track(&ctx.pending, ctx.req);
+}
+
+<*
+ Resolve a hostname to IP addresses for UDP use, asynchronously.
+ Callback receives AddrInfo linked list. Caller must call free_result() to free it.
+
+ @param hostname : "Hostname to resolve"
+ @param service : "Numeric port"
+ @param callback : "Completion callback"
+ @param user_data : "User data passed to callback"
+ @return "An id that can be passed to EventLoop.cancel()"
+*>
+fn event_loop::RequestId? DnsResolver.resolve(&self, String hostname, String service,
+                                             ResolveCallback callback, void* user_data){
+    uv::AddrInfo hints = {
+        .ai_family = uv::AF_UNSPEC,
+        .ai_socktype = uv::SOCK_DGRAM,
+        .ai_protocol = uv::IPPROTO_UDP,
+        .ai_flags = uv::AI_NUMERICSERV,
+    };
+    return self.start_query(hostname, service, &hints, callback, user_data);
 }
 
 <*
  Resolve a hostname for TCP connections asynchronously.
 
  @param hostname : "Hostname to resolve"
- @param service : "Service name or port number"
+ @param service : "Numeric port"
  @param callback : "Completion callback"
  @param user_data : "User data passed to callback"
+ @return "An id that can be passed to EventLoop.cancel()"
 *>
-fn void DnsResolver.resolve_tcp(&self, String hostname, String service,
-                                ResolveCallback callback, void* user_data){
-    ResolveContext* ctx = mem::new(ResolveContext);
-    ctx.cb = callback;
-    ctx.user_data = user_data;
-
-    // Allocate request
-    ctx.req = c3io::alloc_req(uv::GetAddrInfo, uv::ReqType.GETADDRINFO);
-    uv::req_set(ctx.req, ctx);
-
-    // Prepare hints for TCP socket
-    uv::AddrInfo hints;
-    hints.ai_family = uv::AF_UNSPEC;      // Allow IPv4 or IPv6
-    hints.ai_socktype = uv::SOCK_STREAM;  // TCP socket
-    hints.ai_protocol = uv::IPPROTO_TCP;  // TCP protocol
-    hints.ai_flags = uv::AI_NUMERICSERV;  // Service is a numeric port
-
-    int result;
-    @pool()
-    {
-        result = uv::getaddrinfo(self.loop.loop, ctx.req, &on_resolve_internal,
-                                 hostname.zstr_tcopy(), service.zstr_tcopy(), &hints);
+fn event_loop::RequestId? DnsResolver.resolve_tcp(&self, String hostname, String service,
+                                                 ResolveCallback callback, void* user_data){
+    uv::AddrInfo hints = {
+        .ai_family = uv::AF_UNSPEC,
+        .ai_socktype = uv::SOCK_STREAM,
+        .ai_protocol = uv::IPPROTO_TCP,
+        .ai_flags = uv::AI_NUMERICSERV,
     };
-
-    if (result < 0)
-    {
-        // Immediate error
-        if (callback)
-        {
-            callback(null, result, user_data);
-        }
-        free(ctx.req);
-        free(ctx);
-    }
+    return self.start_query(hostname, service, &hints, callback, user_data);
 }
 
 <*

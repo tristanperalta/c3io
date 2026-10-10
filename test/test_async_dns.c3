@@ -63,10 +63,10 @@ fn void test_resolve_localhost() @test
 
     // Create DNS resolver
     c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
-    defer free(resolver);
+    defer resolver.free();
 
     // Resolve localhost (should always work)
-    resolver.resolve("localhost", "8080", &on_resolve_localhost, &ctx);
+    resolver.resolve("localhost", "8080", &on_resolve_localhost, &ctx)!!;
 
     // Run event loop until complete
     while (!ctx.completed)
@@ -132,10 +132,10 @@ fn void test_resolve_tcp() @test
 
     // Create DNS resolver
     c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
-    defer free(resolver);
+    defer resolver.free();
 
     // Resolve with TCP hint
-    resolver.resolve_tcp("localhost", "80", &on_resolve_tcp, &ctx);
+    resolver.resolve_tcp("localhost", "80", &on_resolve_tcp, &ctx)!!;
 
     while (!ctx.completed)
     {
@@ -204,9 +204,9 @@ fn void test_addr_to_string() @test
 
     // Create DNS resolver
     c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
-    defer free(resolver);
+    defer resolver.free();
 
-    resolver.resolve("localhost", "0", &on_resolve_for_addr_to_string, &ctx);
+    resolver.resolve("localhost", "0", &on_resolve_for_addr_to_string, &ctx)!!;
 
     while (!ctx.completed)
     {
@@ -253,11 +253,11 @@ fn void test_resolve_invalid_hostname() @test
 
     // Create DNS resolver
     c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
-    defer free(resolver);
+    defer resolver.free();
 
     // Try to resolve a clearly invalid hostname
     resolver.resolve("this-hostname-should-not-exist-12345.invalid",
-                    "8080", &on_resolve_invalid, &ctx);
+                    "8080", &on_resolve_invalid, &ctx)!!;
 
     while (!ctx.completed)
     {
@@ -322,10 +322,10 @@ fn void test_multiple_addresses() @test
 
     // Create DNS resolver
     c3io::dns::DnsResolver* resolver = c3io::dns::create(&loop);
-    defer free(resolver);
+    defer resolver.free();
 
     // Resolve localhost which may have multiple addresses
-    resolver.resolve("localhost", "0", &on_resolve_multiple_addrs, &ctx);
+    resolver.resolve("localhost", "0", &on_resolve_multiple_addrs, &ctx)!!;
 
     while (!ctx.completed)
     {

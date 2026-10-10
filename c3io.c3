@@ -53,15 +53,15 @@ fn void set_last_status(int result) => last_status_code = result;
 <*
  Allocate zeroed memory for a libuv handle of the given type.
 *>
-macro alloc_handle($Type, uv::HandleType type)
+macro alloc_handle(Allocator allocator, $Type, uv::HandleType type)
 {
-    return ($Type*)mem::calloc((sz)uv::handle_size(type));
+    return ($Type*)alloc::calloc(allocator, (sz)uv::handle_size(type));
 }
 
 <*
- Allocate memory for a libuv request of the given type.
+ Allocate zeroed memory for a libuv request of the given type.
 *>
-macro alloc_req($Type, uv::ReqType type)
+macro alloc_req(Allocator allocator, $Type, uv::ReqType type)
 {
-    return ($Type*)mem::calloc((sz)uv::req_size(type));
+    return ($Type*)alloc::calloc(allocator, (sz)uv::req_size(type));
 }

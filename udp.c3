@@ -40,6 +40,8 @@ alias AllocCallback = fn char[](UdpSocket* socket, usz suggested_size, void* use
 *>
 struct UdpSocket
 {
+    event_loop::HandleOwner owner;
+    Allocator allocator;
     uv::Udp* handle;
     event_loop::EventLoop* loop;
     RecvCallback recv_cb;
@@ -74,7 +76,7 @@ fn void on_alloc_internal(uv::Handle* handle, usz suggested_size, uv::Buf* buf)
     else
     {
         // Default allocation
-        buf.base = mem::new_array(char, (sz)suggested_size);
+        buf.base = alloc::new_array(socket.allocator, char, (sz)suggested_size);
         buf.len = suggested_size;
     }
 }
@@ -97,7 +99,7 @@ fn void on_recv_internal(uv::Udp* handle, sz nread, uv::Buf* buf, uv::Sockaddr* 
     // Free the buffer
     if (buf.base)
     {
-        free(buf.base);
+        alloc::free(socket.allocator, buf.base);
     }
 }
 
@@ -111,54 +113,48 @@ fn void on_send_internal(uv::UdpSend* req, int status)
     }
 
     // Clean up (including copied data buffer)
+    Allocator allocator = ctx.socket.allocator;
     if (ctx.bufs != null)
     {
-        free(ctx.bufs.base);  // Free the copied data
-        free(ctx.bufs);
+        alloc::free(allocator, ctx.bufs.base);  // Free the copied data
+        alloc::free(allocator, ctx.bufs);
     }
-    free(ctx.req);
-    free(ctx);
+    alloc::free(allocator, ctx.req);
+    alloc::free(allocator, ctx);
 }
 
 fn void on_close_internal(uv::Handle* handle)
 {
-    // Get socket from handle and free both
     UdpSocket* socket = uv::handle_get(UdpSocket, handle);
-    free(handle);
-    if (socket != null)
-    {
-        free(socket);
-    }
+    Allocator allocator = socket.allocator;
+    alloc::free(allocator, handle);
+    alloc::free(allocator, socket);
 }
 
 <*
  Create a new UDP socket.
 
  @param loop : "Event loop to attach to"
+ @param allocator : "Allocator for the socket and its buffers (default: the loop's)"
 *>
-fn UdpSocket*? create(event_loop::EventLoop* loop){
-    // Allocate UDP handle
-    uv::Udp* handle = c3io::alloc_handle(uv::Udp, uv::HandleType.UDP);
+fn UdpSocket*? create(event_loop::EventLoop* loop, Allocator allocator = null){
+    allocator = loop.allocator_or(allocator);
+    uv::Udp* handle = c3io::alloc_handle(allocator, uv::Udp, uv::HandleType.UDP);
 
-    // Initialize UDP handle
     int result = uv::udp_init(loop.loop, handle);
     if (result != 0)
     {
-        free(handle);
+        alloc::free(allocator, handle);
         c3io::set_last_status(result);
         return UDP_INIT_FAILED~;
     }
 
-    UdpSocket* socket = mem::new(UdpSocket);
+    UdpSocket* socket = alloc::new(allocator, UdpSocket);
+    socket.owner.init(&on_close_internal);
+    socket.allocator = allocator;
     socket.handle = handle;
     socket.loop = loop;
-    socket.recv_cb = null;
-    socket.alloc_cb = null;
-    socket.recv_user_data = null;
-
-    // Store socket pointer in handle's data field
     uv::handle_set(handle, socket);
-
     return socket;
 }
 
@@ -191,13 +187,13 @@ fn void? UdpSocket.bind(&self, String ip, int port){
 *>
 fn void UdpSocket.send(&self, String ip, int port, char[] data,
                        SendCallback callback, void* user_data){
-    SendContext* ctx = mem::new(SendContext);
+    SendContext* ctx = alloc::new(self.allocator, SendContext);
     ctx.socket = self;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = c3io::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
+    ctx.req = c3io::alloc_req(self.allocator, uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Parse destination address
@@ -213,14 +209,14 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
         {
             callback(self, result, user_data);
         }
-        free(ctx.req);
-        free(ctx);
+        alloc::free(self.allocator, ctx.req);
+        alloc::free(self.allocator, ctx);
         return;
     }
 
     // Prepare buffer (copy data so it stays valid until send completes)
-    ctx.bufs = mem::new(uv::Buf);
-    char* data_copy = mem::new_array(char, data.len);
+    ctx.bufs = alloc::new(self.allocator, uv::Buf);
+    char* data_copy = alloc::new_array(self.allocator, char, data.len);
     mem::copy(data_copy, data.ptr, data.len);
     ctx.bufs.base = data_copy;
     ctx.bufs.len = data.len;
@@ -237,11 +233,11 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
         }
         if (ctx.bufs != null)
         {
-            free(ctx.bufs.base);  // Free the copied data
-            free(ctx.bufs);
+            alloc::free(self.allocator, ctx.bufs.base);  // Free the copied data
+            alloc::free(self.allocator, ctx.bufs);
         }
-        free(ctx.req);
-        free(ctx);
+        alloc::free(self.allocator, ctx.req);
+        alloc::free(self.allocator, ctx);
     }
 }
 
@@ -256,18 +252,18 @@ fn void UdpSocket.send(&self, String ip, int port, char[] data,
 *>
 fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
                           SendCallback callback, void* user_data){
-    SendContext* ctx = mem::new(SendContext);
+    SendContext* ctx = alloc::new(self.allocator, SendContext);
     ctx.socket = self;
     ctx.cb = callback;
     ctx.user_data = user_data;
 
     // Allocate request
-    ctx.req = c3io::alloc_req(uv::UdpSend, uv::ReqType.UDP_SEND);
+    ctx.req = c3io::alloc_req(self.allocator, uv::UdpSend, uv::ReqType.UDP_SEND);
     uv::req_set(ctx.req, ctx);
 
     // Prepare buffer (copy data so it stays valid until send completes)
-    ctx.bufs = mem::new(uv::Buf);
-    char* data_copy = mem::new_array(char, data.len);
+    ctx.bufs = alloc::new(self.allocator, uv::Buf);
+    char* data_copy = alloc::new_array(self.allocator, char, data.len);
     mem::copy(data_copy, data.ptr, data.len);
     ctx.bufs.base = data_copy;
     ctx.bufs.len = data.len;
@@ -284,11 +280,11 @@ fn void UdpSocket.send_to(&self, uv::Sockaddr* addr, char[] data,
         }
         if (ctx.bufs != null)
         {
-            free(ctx.bufs.base);  // Free the copied data
-            free(ctx.bufs);
+            alloc::free(self.allocator, ctx.bufs.base);  // Free the copied data
+            alloc::free(self.allocator, ctx.bufs);
         }
-        free(ctx.req);
-        free(ctx);
+        alloc::free(self.allocator, ctx.req);
+        alloc::free(self.allocator, ctx);
     }
 }
 
